@@ -213,7 +213,7 @@ fun LoadingIndicator() {
             .padding(32.dp)
     ) {
         Text(
-            text = "Loading GemmaFriend...",
+            text = "Loading InnerCircle...",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )

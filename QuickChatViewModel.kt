@@ -27,7 +27,7 @@ class QuickChatViewModel(
 
     private val userProfile = UserProfile.getInstance(context)
 
-    private val systemPrompt = """You are WellnessFriend, a supportive AI wellness companion. Provide helpful, concise advice for mental health, stress management, and general wellness.
+    private val systemPrompt = """You are a supportive AI wellness companion. Provide helpful, concise advice for mental health, stress management, and general wellness.
 
 Your guidelines:
 • Keep responses helpful but concise (2-3 paragraphs max)

@@ -126,7 +126,7 @@ fun SettingsScreen(onBack: () -> Unit, context: Context) {
 
         item {
             SettingsCard(
-                title = "About WellnessFriend",
+                title = "About InnerCircle",
                 description = "Learn more about the app, privacy policy, and version info",
                 icon = Icons.Default.Info,
                 onClick = { showAboutDialog = true }

@@ -32,10 +32,12 @@ const val LOAD_SCREEN = "load_screen"
 const val HOME_SCREEN = "home_screen"
 const val QUICK_CHAT_SCREEN = "quick_chat_screen"
 const val MEDITATION_SCREEN = "meditation_screen"
+const val MEDITATION_SESSION_SCREEN = "meditation_session_screen"
 const val BREATHING_SCREEN = "breathing_screen"
 const val MOOD_TRACKER_SCREEN = "mood_tracker_screen"
 const val DREAM_INTERPRETER_SCREEN = "dream_interpreter_screen"
 const val SETTINGS_SCREEN = "settings_screen"
+const val TTS_SETTINGS_SCREEN = "tts_settings_screen"
 
 class MainActivity : ComponentActivity() {
 
@@ -118,7 +120,23 @@ class MainActivity : ComponentActivity() {
 
                             composable(MEDITATION_SCREEN) {
                                 MeditationRoute(
-                                    onBack = { navController.popBackStack() }
+                                    onBack = { navController.popBackStack() },
+                                    onStartSession = { meditationType ->
+                                        navController.navigate("$MEDITATION_SESSION_SCREEN/$meditationType")
+                                    }
+                                )
+                            }
+
+                            composable("$MEDITATION_SESSION_SCREEN/{meditationType}") { backStackEntry ->
+                                val meditationType = backStackEntry.arguments?.getString("meditationType") ?: "basic"
+                                MeditationSessionRoute(
+                                    meditationType = meditationType,
+                                    onBack = { navController.popBackStack() },
+                                    onComplete = {
+                                        navController.navigate(MEDITATION_SCREEN) {
+                                            popUpTo(MEDITATION_SESSION_SCREEN) { inclusive = true }
+                                        }
+                                    }
                                 )
                             }
 
@@ -145,6 +163,44 @@ class MainActivity : ComponentActivity() {
                                     onBack = { navController.popBackStack() }
                                 )
                             }
+
+                            composable(MEDITATION_SCREEN) {
+                                MeditationRoute(
+                                    onBack = { navController.popBackStack() },
+                                    onStartSession = { meditationType ->
+                                        navController.navigate("$MEDITATION_SESSION_SCREEN/$meditationType")
+                                    }
+                                )
+                            }
+
+                            composable(TTS_SETTINGS_SCREEN) {
+                                TTSSettingsRoute(
+                                    onBack = { navController.popBackStack() }
+                                )
+                            }
+
+                            composable(HOME_SCREEN) {
+                                HomeRoute(
+                                    onNavigateToQuickChat = {
+                                        navController.navigate(QUICK_CHAT_SCREEN)
+                                    },
+                                    onNavigateToMeditation = {
+                                        navController.navigate(MEDITATION_SCREEN)
+                                    },
+                                    onNavigateToBreathing = {
+                                        navController.navigate(BREATHING_SCREEN)
+                                    },
+                                    onNavigateToMoodTracker = {
+                                        navController.navigate(MOOD_TRACKER_SCREEN)
+                                    },
+                                    onNavigateToDreamInterpreter = {
+                                        navController.navigate(DREAM_INTERPRETER_SCREEN)
+                                    },
+                                    onNavigateToSettings = {
+                                        navController.navigate(SETTINGS_SCREEN)
+                                    }
+                                )
+                            }
                         }
                     }
                 }
@@ -161,7 +217,7 @@ class MainActivity : ComponentActivity() {
             TopAppBar(
                 title = {
                     Text(
-                        "🌟 WellnessFriend",
+                        "InnerCircle",
                         fontWeight = FontWeight.Bold
                     )
                 },
