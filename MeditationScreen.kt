@@ -18,6 +18,9 @@ import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.Color
 
 @Composable
 internal fun MeditationRoute(
@@ -32,6 +35,21 @@ internal fun MeditationRoute(
     )
 }
 
+// Fixed durations for predefined meditations
+private fun getMeditationDuration(type: String): String {
+    return when (type) {
+        "stress_relief" -> "5 min"
+        "focus_boost" -> "8 min"
+        "sleep_prep" -> "10 min"
+        "anxiety_ease" -> "7 min"
+        "deep_relaxation" -> "20 min"
+        "mindful_awareness" -> "15 min"
+        "extended_focus" -> "30 min"
+        "complete_zen" -> "45 min"
+        else -> "5 min" // default
+    }
+}
+
 @Composable
 fun MeditationScreen(
     onBack: () -> Unit,
@@ -43,6 +61,7 @@ fun MeditationScreen(
     val stats = remember { meditationSettings.getMeditationStatistics() }
     var showSettings by remember { mutableStateOf(false) }
     var showCustomMeditationDialog by remember { mutableStateOf(false) }
+    var showSavedMeditationsDialog by remember { mutableStateOf(false) }
 
     // Unified settings state management
     var soundEnabled by remember { mutableStateOf(meditationSettings.isSoundEnabled()) }
@@ -148,6 +167,39 @@ fun MeditationScreen(
 
         item {
             Text(
+                text = "AuriZen Personalized Meditation",
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                MeditationCard(
+                    title = "AI-Generated Session",
+                    duration = "Custom",
+                    description = "Personalized meditation created by AI based on your preferences",
+                    icon = Icons.Default.AutoAwesome,
+                    onClick = { showCustomMeditationDialog = true },
+                    modifier = Modifier.weight(1f),
+                    useAuriZenIcon = true
+                )
+                MeditationCard(
+                    title = "Saved Meditations",
+                    duration = "Varied",
+                    description = "Access your saved meditation sessions and templates",
+                    icon = Icons.Default.BookmarkBorder,
+                    onClick = { showSavedMeditationsDialog = true },
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            Text(
                 text = "Quick Sessions (5-10 min)",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
@@ -161,7 +213,7 @@ fun MeditationScreen(
             ) {
                 MeditationCard(
                     title = "Stress Relief",
-                    duration = "5 min",
+                    duration = getMeditationDuration("stress_relief"),
                     description = "Quick calm for busy moments",
                     icon = Icons.Default.Healing,
                     onClick = { onStartSession("stress_relief") },
@@ -169,7 +221,7 @@ fun MeditationScreen(
                 )
                 MeditationCard(
                     title = "Focus Boost",
-                    duration = "8 min",
+                    duration = getMeditationDuration("focus_boost"),
                     description = "Enhance concentration",
                     icon = Icons.Default.Visibility,
                     onClick = { onStartSession("focus_boost") },
@@ -185,7 +237,7 @@ fun MeditationScreen(
             ) {
                 MeditationCard(
                     title = "Sleep Prep",
-                    duration = "10 min",
+                    duration = getMeditationDuration("sleep_prep"),
                     description = "Wind down for better rest",
                     icon = Icons.Default.Bedtime,
                     onClick = { onStartSession("sleep_prep") },
@@ -193,7 +245,7 @@ fun MeditationScreen(
                 )
                 MeditationCard(
                     title = "Anxiety Ease",
-                    duration = "7 min",
+                    duration = getMeditationDuration("anxiety_ease"),
                     description = "Gentle anxiety relief",
                     icon = Icons.Default.FavoriteBorder,
                     onClick = { onStartSession("anxiety_ease") },
@@ -218,7 +270,7 @@ fun MeditationScreen(
             ) {
                 MeditationCard(
                     title = "Deep Relaxation",
-                    duration = "20 min",
+                    duration = getMeditationDuration("deep_relaxation"),
                     description = "Complete body and mind reset with progressive relaxation",
                     icon = Icons.Default.Spa,
                     onClick = { onStartSession("deep_relaxation") },
@@ -226,7 +278,7 @@ fun MeditationScreen(
                 )
                 MeditationCard(
                     title = "Mindful Awareness",
-                    duration = "15 min",
+                    duration = getMeditationDuration("mindful_awareness"),
                     description = "Develop present-moment awareness and mindful observation",
                     icon = Icons.Default.Psychology,
                     onClick = { onStartSession("mindful_awareness") },
@@ -242,7 +294,7 @@ fun MeditationScreen(
             ) {
                 MeditationCard(
                     title = "Extended Focus",
-                    duration = "30 min",
+                    duration = getMeditationDuration("extended_focus"),
                     description = "Deep concentration practice for advanced practitioners",
                     icon = Icons.Default.CenterFocusStrong,
                     onClick = { onStartSession("extended_focus") },
@@ -250,7 +302,7 @@ fun MeditationScreen(
                 )
                 MeditationCard(
                     title = "Complete Zen",
-                    duration = "45 min",
+                    duration = getMeditationDuration("complete_zen"),
                     description = "Full meditation experience with breathing, awareness, and stillness",
                     icon = Icons.Default.SelfImprovement,
                     onClick = { onStartSession("complete_zen") },
@@ -259,25 +311,6 @@ fun MeditationScreen(
             }
         }
 
-        item {
-            Text(
-                text = "Custom Meditation",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
-                modifier = Modifier.padding(vertical = 8.dp)
-            )
-        }
-
-        item {
-            MeditationCard(
-                title = "AI-Generated Session",
-                duration = "Custom",
-                description = "Personalized meditation created by AI based on your preferences",
-                icon = Icons.Default.AutoAwesome,
-                onClick = { showCustomMeditationDialog = true },
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
 
         // Voice guidance info card (removed separate settings button, just info)
         item {
@@ -335,6 +368,7 @@ fun MeditationScreen(
             onTtsVolumeChange = { /* No-op for this screen */ },
             onTtsSpeedChange = { /* No-op for this screen */ },
             onTtsPitchChange = { /* No-op for this screen */ },
+            onTtsVoiceChange = { /* No-op for this screen */ },
             onDismiss = { showSettings = false }
         )
     }
@@ -349,6 +383,17 @@ fun MeditationScreen(
             }
         )
     }
+
+    if (showSavedMeditationsDialog) {
+        SavedMeditationsDialog(
+            context = context,
+            onDismiss = { showSavedMeditationsDialog = false },
+            onStartSavedMeditation = { sessionId ->
+                showSavedMeditationsDialog = false
+                onStartSession(sessionId)
+            }
+        )
+    }
 }
 
 @Composable
@@ -358,7 +403,8 @@ private fun MeditationCard(
     description: String,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     onClick: () -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    useAuriZenIcon: Boolean = false
 ) {
     Card(
         onClick = onClick,
@@ -371,15 +417,25 @@ private fun MeditationCard(
         Column(
             modifier = Modifier
                 .padding(16.dp)
-                .fillMaxWidth(),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .fillMaxWidth()
+                .height(180.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
         ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = title,
-                modifier = Modifier.size(28.dp),
-                tint = MaterialTheme.colorScheme.primary
-            )
+            if (useAuriZenIcon) {
+                Image(
+                    painter = painterResource(id = R.drawable.aurizen),
+                    contentDescription = title,
+                    modifier = Modifier.size(28.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    modifier = Modifier.size(28.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -393,7 +449,7 @@ private fun MeditationCard(
             Text(
                 text = duration,
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.primary,
+                color = Color(0xFFFF9800), // Warm orange color
                 textAlign = TextAlign.Center
             )
 
@@ -404,7 +460,8 @@ private fun MeditationCard(
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth()
+                modifier = Modifier.fillMaxWidth(),
+                maxLines = 3
             )
         }
     }
@@ -422,7 +479,8 @@ private fun MeditationStatsCard(stats: MeditationStatistics) {
             Text(
                 text = "Your Progress",
                 style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                color = Color(0xFFFF9800) // Warm orange color
             )
 
             Spacer(modifier = Modifier.height(12.dp))
@@ -464,13 +522,14 @@ private fun StatItem(
             imageVector = icon,
             contentDescription = label,
             modifier = Modifier.size(20.dp),
-            tint = MaterialTheme.colorScheme.primary
+            tint = Color(0xFFFF9800) // Warm orange color
         )
         Spacer(modifier = Modifier.height(4.dp))
         Text(
             text = value,
             style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            color = Color(0xFFFF9800) // Warm orange color
         )
         Text(
             text = label,
@@ -490,8 +549,6 @@ private fun CustomMeditationDialog(
     var meditationFocus by remember { mutableStateOf("") }
     var currentMood by remember { mutableStateOf("") }
     var experience by remember { mutableStateOf("") }
-    var isGenerating by remember { mutableStateOf(false) }
-    var generationProgress by remember { mutableStateOf("") }
 
     // Auto-calculate steps based on duration
     val calculatedSteps = calculateStepsForDuration(selectedDuration)
@@ -586,50 +643,18 @@ private fun CustomMeditationDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("Beginner", "Intermediate", "Advanced").forEach { level ->
+                        listOf("Beginner", "Middle", "Advanced").forEach { level ->
                             FilterChip(
                                 onClick = { experience = level },
-                                label = { Text(level) },
-                                selected = experience == level,
-                                modifier = Modifier.weight(1f)
-                            )
-                        }
-                    }
-                }
-
-                if (isGenerating) {
-                    item {
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(16.dp),
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                CircularProgressIndicator(
-                                    modifier = Modifier.size(24.dp),
-                                    strokeWidth = 2.dp
-                                )
-                                Spacer(modifier = Modifier.width(12.dp))
-                                Column {
+                                label = { 
                                     Text(
-                                        "AI is creating your custom meditation...",
-                                        style = MaterialTheme.typography.bodyMedium
+                                        level,
+                                        style = MaterialTheme.typography.labelSmall
                                     )
-                                    if (generationProgress.isNotEmpty()) {
-                                        Text(
-                                            generationProgress,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                                        )
-                                    }
-                                }
-                            }
+                                },
+                                selected = experience == level,
+                                modifier = Modifier.weight(.5f)
+                            )
                         }
                     }
                 }
@@ -638,40 +663,34 @@ private fun CustomMeditationDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (!isGenerating) {
-                        isGenerating = true
-                        startSequentialCustomMeditation(
-                            context = context,
-                            duration = selectedDuration,
-                            steps = calculatedSteps,
-                            focus = meditationFocus,
-                            mood = currentMood,
-                            experience = experience,
-                            onProgress = { progress ->
-                                generationProgress = progress
-                            },
-                            onComplete = { sessionId ->
-                                isGenerating = false
-                                generationProgress = ""
-                                onStartCustomSession(sessionId)
-                            },
-                            onError = {
-                                isGenerating = false
-                                generationProgress = ""
-                                // Could show error dialog here
-                            }
-                        )
-                    }
+                    // Create session config and navigate immediately
+                    val sessionId = "custom_ai_${System.currentTimeMillis()}"
+                    val stepDuration = (selectedDuration * 60) / calculatedSteps
+                    
+                    // Store session configuration
+                    val config = CustomMeditationConfig(
+                        sessionId = sessionId,
+                        totalDuration = selectedDuration,
+                        totalSteps = calculatedSteps,
+                        stepDuration = stepDuration,
+                        focus = meditationFocus,
+                        mood = currentMood,
+                        experience = experience
+                    )
+                    
+                    storeCustomMeditationConfig(context, config)
+                    
+                    // Navigate immediately to session screen
+                    onStartCustomSession(sessionId)
                 },
-                enabled = !isGenerating && experience.isNotEmpty()
+                enabled = experience.isNotEmpty()
             ) {
-                Text(if (isGenerating) "Generating..." else "Create Meditation")
+                Text("Create Meditation")
             }
         },
         dismissButton = {
             TextButton(
-                onClick = onDismiss,
-                enabled = !isGenerating
+                onClick = onDismiss
             ) {
                 Text("Cancel")
             }
@@ -804,16 +823,23 @@ private fun storeCustomMeditationConfig(context: android.content.Context, config
     val prefs = context.getSharedPreferences("custom_meditations", android.content.Context.MODE_PRIVATE)
     val editor = prefs.edit()
     
+    // Clear any existing steps for this session to ensure fresh generation
+    for (i in 0 until config.totalSteps) {
+        editor.remove("${config.sessionId}_step_${i}_title")
+        editor.remove("${config.sessionId}_step_${i}_description")
+        editor.remove("${config.sessionId}_step_${i}_guidance")
+        editor.remove("${config.sessionId}_step_${i}_duration")
+    }
+    
     editor.putString("${config.sessionId}_focus", config.focus)
     editor.putString("${config.sessionId}_mood", config.mood)
     editor.putString("${config.sessionId}_experience", config.experience)
     editor.putInt("${config.sessionId}_duration", config.totalDuration)
     editor.putInt("${config.sessionId}_total_steps", config.totalSteps)
     editor.putInt("${config.sessionId}_step_duration", config.stepDuration)
-    editor.putInt("${config.sessionId}_current_step", 0)
     
     editor.apply()
-    Log.d("CustomMeditation", "Stored config for session ${config.sessionId}")
+    Log.d("CustomMeditation", "Stored config for session ${config.sessionId} and cleared old steps")
 }
 
 // Build prompt for a single meditation step  
@@ -921,4 +947,176 @@ private fun calculateStepsForDuration(durationMinutes: Int): Int {
         durationMinutes <= 45 -> 6   // Very long: 6 steps
         else -> 7                    // Extended: 7 steps max
     }
+}
+
+@Composable
+private fun SavedMeditationsDialog(
+    context: android.content.Context,
+    onDismiss: () -> Unit,
+    onStartSavedMeditation: (String) -> Unit
+) {
+    var savedMeditations by remember { mutableStateOf(loadSavedMeditations(context)) }
+    
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { 
+            Text(
+                "Saved Meditations",
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+        },
+        text = {
+            if (savedMeditations.isEmpty()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth().padding(16.dp)
+                ) {
+                    Text(
+                        "No saved meditations yet",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        "Create a custom meditation and save it to see it here",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                        textAlign = TextAlign.Center
+                    )
+                }
+            } else {
+                LazyColumn(
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.fillMaxWidth().height(400.dp)
+                ) {
+                    items(savedMeditations.size) { index ->
+                        val meditation = savedMeditations[index]
+                        SavedMeditationItem(
+                            meditation = meditation,
+                            onSelect = { onStartSavedMeditation(meditation.id) },
+                            onDelete = { 
+                                deleteSavedMeditation(context, meditation.id)
+                                savedMeditations = loadSavedMeditations(context)
+                            }
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+private fun SavedMeditationItem(
+    meditation: SavedMeditation,
+    onSelect: () -> Unit,
+    onDelete: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onSelect
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp).fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = meditation.name,
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.SemiBold
+                )
+                if (meditation.description.isNotEmpty()) {
+                    Text(
+                        text = meditation.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                    )
+                }
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(top = 4.dp)
+                ) {
+                    Text(
+                        text = "${meditation.totalDuration} min",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    Text(
+                        text = when (meditation.saveType) {
+                            SavedMeditationType.EXACT_SESSION -> "Exact"
+                            SavedMeditationType.CONFIG_TEMPLATE -> "Template"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "Delete",
+                    tint = MaterialTheme.colorScheme.error
+                )
+            }
+        }
+    }
+}
+
+private fun loadSavedMeditations(context: android.content.Context): List<SavedMeditation> {
+    val prefs = context.getSharedPreferences("saved_meditations", android.content.Context.MODE_PRIVATE)
+    val savedIds = prefs.getStringSet("saved_meditation_ids", emptySet()) ?: emptySet()
+    
+    return savedIds.mapNotNull { id ->
+        try {
+            val name = prefs.getString("${id}_name", null) ?: return@mapNotNull null
+            val description = prefs.getString("${id}_description", "") ?: ""
+            val duration = prefs.getInt("${id}_duration", 0)
+            val steps = prefs.getInt("${id}_steps", 0)
+            val created = prefs.getLong("${id}_created", 0)
+            val used = prefs.getLong("${id}_used", 0)
+            val typeString = prefs.getString("${id}_type", null) ?: return@mapNotNull null
+            val saveType = SavedMeditationType.valueOf(typeString)
+            
+            SavedMeditation(
+                id = id,
+                name = name,
+                description = description,
+                totalDuration = duration,
+                totalSteps = steps,
+                createdAt = created,
+                lastUsedAt = used,
+                saveType = saveType
+            )
+        } catch (e: Exception) {
+            Log.e("SavedMeditations", "Error loading saved meditation $id", e)
+            null
+        }
+    }.sortedByDescending { it.lastUsedAt }
+}
+
+private fun deleteSavedMeditation(context: android.content.Context, id: String) {
+    val prefs = context.getSharedPreferences("saved_meditations", android.content.Context.MODE_PRIVATE)
+    val editor = prefs.edit()
+    
+    // Remove from saved list
+    val savedIds = prefs.getStringSet("saved_meditation_ids", emptySet())?.toMutableSet() ?: mutableSetOf()
+    savedIds.remove(id)
+    editor.putStringSet("saved_meditation_ids", savedIds)
+    
+    // Remove all data for this meditation
+    val allKeys = prefs.all.keys.filter { it.startsWith("${id}_") }
+    allKeys.forEach { key ->
+        editor.remove(key)
+    }
+    
+    editor.apply()
+    Log.d("SavedMeditations", "Deleted saved meditation: $id")
 }

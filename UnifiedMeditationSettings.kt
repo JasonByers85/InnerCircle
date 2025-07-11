@@ -45,6 +45,7 @@ fun UnifiedMeditationSettingsDialog(
     onTtsVolumeChange: ((Float) -> Unit)? = null,
     onTtsSpeedChange: ((Float) -> Unit)? = null,
     onTtsPitchChange: ((Float) -> Unit)? = null,
+    onTtsVoiceChange: ((String) -> Unit)? = null,
     onDismiss: () -> Unit
 ) {
     var currentTab by remember { mutableStateOf(0) }
@@ -126,7 +127,7 @@ fun UnifiedMeditationSettingsDialog(
                         onBinauralVolumeChange = onBinauralVolumeChange,
                         onTtsVolumeChange = onTtsVolumeChange
                     )
-                    1 -> VoiceSettingsTab(settings, context, onTtsSpeedChange, onTtsPitchChange, onTtsVolumeChange)
+                    1 -> VoiceSettingsTab(settings, context, onTtsSpeedChange, onTtsPitchChange, onTtsVolumeChange, onTtsVoiceChange)
                     2 -> GeneralSettingsTab(settings)
                 }
             }
@@ -652,7 +653,8 @@ private fun VoiceSettingsTab(
     context: Context,
     onTtsSpeedChange: ((Float) -> Unit)? = null,
     onTtsPitchChange: ((Float) -> Unit)? = null,
-    onTtsVolumeChange: ((Float) -> Unit)? = null
+    onTtsVolumeChange: ((Float) -> Unit)? = null,
+    onTtsVoiceChange: ((String) -> Unit)? = null
 ) {
     var ttsSpeed by remember { mutableStateOf(settings.getTtsSpeed()) }
     var ttsPitch by remember { mutableStateOf(settings.getTtsPitch()) }
@@ -787,6 +789,7 @@ private fun VoiceSettingsTab(
                                     onClick = {
                                         selectedVoice = voice.name
                                         settings.setTtsVoice(voice.name)
+                                        onTtsVoiceChange?.invoke(voice.name)
                                     }
                                 )
                                 Text(voice.name.replace("_", " "))

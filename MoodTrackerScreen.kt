@@ -35,9 +35,14 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 
 @Composable
-internal fun MoodTrackerRoute(onBack: () -> Unit) {
+internal fun MoodTrackerRoute(
+    onBack: () -> Unit,
+    onNavigateToCustomMeditation: (String, String, String) -> Unit = { _, _, _ -> }
+) {
     val context = LocalContext.current
     val viewModel: MoodTrackerViewModel = viewModel(factory = MoodTrackerViewModel.getFactory(context))
     
@@ -57,6 +62,11 @@ internal fun MoodTrackerRoute(onBack: () -> Unit) {
         onSaveMood = { mood, note -> viewModel.saveMood(mood, note) },
         onGenerateInsights = { viewModel.generateMoodInsights() },
         onClearHistory = { viewModel.clearMoodHistory() },
+        onGenerateCustomMeditation = {
+            val (focus, mood, experience) = viewModel.generateMeditationParams()
+            val moodContext = viewModel.getMoodContext()
+            onNavigateToCustomMeditation(focus, mood, moodContext) // Pass actual mood context
+        },
         context = context
     )
 }
@@ -70,6 +80,7 @@ fun MoodTrackerScreen(
     onSaveMood: (String, String) -> Unit,
     onGenerateInsights: () -> Unit,
     onClearHistory: () -> Unit,
+    onGenerateCustomMeditation: () -> Unit,
     context: Context
 ) {
     var selectedMood by remember { mutableStateOf("") }
@@ -163,15 +174,17 @@ fun MoodTrackerScreen(
                         columns = GridCells.Fixed(2),
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.height(200.dp)
+                        modifier = Modifier.height(280.dp)
                     ) {
                         val moods = listOf(
                             "😊 Happy" to "happy",
                             "😌 Calm" to "calm",
+                            "🤩 Ecstatic" to "ecstatic",
+                            "😎 Confident" to "confident",
                             "😔 Sad" to "sad",
+                            "😫 Stressed" to "stressed",
                             "😰 Anxious" to "anxious",
-                            "😴 Tired" to "tired",
-                            "😠 Frustrated" to "frustrated"
+                            "😴 Tired" to "tired"
                         )
                         
                         items(moods) { (display, value) ->
@@ -350,7 +363,11 @@ fun MoodTrackerScreen(
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Analyzing...")
                         } else {
-                            Icon(Icons.Default.Psychology, contentDescription = null)
+                            Image(
+                                painter = painterResource(id = R.drawable.aurizen),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Generate Mood Insights")
                         }
@@ -367,8 +384,8 @@ fun MoodTrackerScreen(
                         ) {
                             Column(modifier = Modifier.padding(16.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
-                                    Icon(
-                                        Icons.Default.Psychology,
+                                    Image(
+                                        painter = painterResource(id = R.drawable.aurizen),
                                         contentDescription = null,
                                         modifier = Modifier.size(20.dp)
                                     )
@@ -386,6 +403,57 @@ fun MoodTrackerScreen(
                                 )
                             }
                         }
+                    }
+                    
+                    // Custom meditation suggestion button - only show when not loading
+                    if (!isLoadingInsights) {
+                        item {
+                        Card(
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = CardDefaults.cardColors(
+                                containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+                            )
+                        ) {
+                            Column(
+                                modifier = Modifier.padding(16.dp),
+                                horizontalAlignment = Alignment.CenterHorizontally
+                            ) {
+                                Text(
+                                    text = "🧘‍♀️ Want me to create a meditation for you?",
+                                    style = MaterialTheme.typography.titleSmall,
+                                    fontWeight = FontWeight.SemiBold,
+                                    textAlign = TextAlign.Center
+                                )
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                Text(
+                                    text = "Based on your mood patterns, I'll generate a personalized meditation session designed just for your current emotional state.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    textAlign = TextAlign.Center,
+                                    color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.8f)
+                                )
+                                
+                                Spacer(modifier = Modifier.height(12.dp))
+                                
+                                Button(
+                                    onClick = onGenerateCustomMeditation,
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = MaterialTheme.colorScheme.primary
+                                    )
+                                ) {
+                                    Image(
+                                        painter = painterResource(id = R.drawable.aurizen),
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("Create My Meditation")
+                                }
+                            }
+                        }
+                    }
                     }
                 }
             }
@@ -410,7 +478,19 @@ private fun MoodVisualization(moodHistory: List<MoodEntry>) {
                 fontWeight = FontWeight.SemiBold
             )
             
+            Spacer(modifier = Modifier.height(4.dp))
+            
+            Text(
+                text = "Shows latest mood for each day",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            )
+            
             Spacer(modifier = Modifier.height(16.dp))
+            
+            // Get theme colors outside Canvas context
+            val gridLineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f)
+            val centerLineColor = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f)
             
             Canvas(
                 modifier = Modifier
@@ -421,28 +501,57 @@ private fun MoodVisualization(moodHistory: List<MoodEntry>) {
                 val height = size.height
                 val centerY = height / 2
                 
-                // Get last 7 days of data
-                val recent = moodHistory.takeLast(7)
-                if (recent.size < 2) return@Canvas
+                // Group entries by date and get last 7 days
+                val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.getDefault())
+                val groupedByDate = moodHistory.groupBy { entry ->
+                    dateFormat.format(java.util.Date(entry.timestamp))
+                }.toSortedMap()
                 
-                val stepX = width / (recent.size - 1)
-                val moodValues = recent.map { entry ->
-                    when (entry.mood) {
-                        "happy" -> 1f
-                        "calm" -> 0.5f
+                // Get last 7 days of data (by date, not by entry count)
+                val recentDays = groupedByDate.entries.toList().takeLast(7)
+                if (recentDays.size < 2) return@Canvas
+                
+                val stepX = width / (recentDays.size - 1).toFloat()
+                val moodValues = recentDays.map { (date, entriesForDay) ->
+                    // Take the most recent mood entry for each day
+                    val latestMoodForDay = entriesForDay.maxByOrNull { entry -> entry.timestamp }?.mood ?: "tired"
+                    when (latestMoodForDay) {
+                        "ecstatic" -> 1f
+                        "happy" -> 0.8f
+                        "confident" -> 0.6f
+                        "calm" -> 0.4f
                         "tired" -> 0f
-                        "frustrated" -> -0.5f
-                        "sad" -> -0.7f
-                        "anxious" -> -0.8f
+                        "sad" -> -0.4f
+                        "anxious" -> -0.6f
+                        "stressed" -> -0.8f
                         else -> 0f
                     }
                 }
                 
+                // Draw vertical day lines
+                for (i in recentDays.indices) {
+                    val x = i.toFloat() * stepX
+                    drawLine(
+                        color = gridLineColor,
+                        start = Offset(x, 0f),
+                        end = Offset(x, height),
+                        strokeWidth = 1f
+                    )
+                }
+                
+                // Draw horizontal center line
+                drawLine(
+                    color = centerLineColor,
+                    start = Offset(0f, centerY),
+                    end = Offset(width, centerY),
+                    strokeWidth = 1f
+                )
+                
                 // Draw mood line
-                for (i in 0 until recent.size - 1) {
-                    val x1 = i * stepX
+                for (i in 0 until recentDays.size - 1) {
+                    val x1 = i.toFloat() * stepX
                     val y1 = centerY - (moodValues[i] * centerY * 0.8f)
-                    val x2 = (i + 1) * stepX
+                    val x2 = (i + 1).toFloat() * stepX
                     val y2 = centerY - (moodValues[i + 1] * centerY * 0.8f)
                     
                     drawLine(
@@ -461,8 +570,8 @@ private fun MoodVisualization(moodHistory: List<MoodEntry>) {
                 }
                 
                 // Draw last point
-                if (recent.isNotEmpty()) {
-                    val lastX = (recent.size - 1) * stepX
+                if (recentDays.isNotEmpty()) {
+                    val lastX = (recentDays.size - 1).toFloat() * stepX
                     val lastY = centerY - (moodValues.last() * centerY * 0.8f)
                     drawCircle(
                         color = Color(0xFF2196F3),
@@ -474,16 +583,7 @@ private fun MoodVisualization(moodHistory: List<MoodEntry>) {
             
             Spacer(modifier = Modifier.height(8.dp))
             
-            // Mood legend
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                MoodLegendItem("😊", "Happy")
-                MoodLegendItem("😌", "Calm")
-                MoodLegendItem("😔", "Sad")
-                MoodLegendItem("😰", "Anxious")
-            }
+           
         }
     }
 }
@@ -493,10 +593,12 @@ private fun MoodLegendItem(emoji: String, label: String) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Text(
-            text = emoji,
-            fontSize = 16.sp
-        )
+        if (emoji.isNotEmpty()) {
+            Text(
+                text = emoji,
+                fontSize = 16.sp
+            )
+        }
         Text(
             text = label,
             style = MaterialTheme.typography.labelSmall,
@@ -508,29 +610,33 @@ private fun MoodLegendItem(emoji: String, label: String) {
 @Composable
 private fun MoodHistoryCard(entry: MoodEntry) {
     Card(
-        modifier = Modifier.width(100.dp),
+        modifier = Modifier.width(80.dp),
         colors = CardDefaults.cardColors(
             containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
         )
     ) {
         Column(
-            modifier = Modifier.padding(8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(6.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
                 text = getMoodEmoji(entry.mood),
-                fontSize = 24.sp
+                fontSize = 20.sp
             )
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(2.dp))
             Text(
                 text = entry.mood.capitalize(),
                 style = MaterialTheme.typography.labelSmall,
-                fontWeight = FontWeight.SemiBold
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
             )
             Text(
                 text = SimpleDateFormat("MMM dd", Locale.getDefault()).format(Date(entry.timestamp)),
                 style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
             )
         }
     }
@@ -574,10 +680,12 @@ private fun getMoodEmoji(mood: String): String {
     return when (mood) {
         "happy" -> "😊"
         "calm" -> "😌"
+        "ecstatic" -> "🤩"
+        "confident" -> "😎"
         "sad" -> "😔"
         "anxious" -> "😰"
         "tired" -> "😴"
-        "frustrated" -> "😠"
+        "stressed" -> "😫"
         else -> "😐"
     }
 }

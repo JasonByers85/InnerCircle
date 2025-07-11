@@ -10,6 +10,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.Image
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.shape.RoundedCornerShape
 import kotlinx.coroutines.*
 import java.io.File
 
@@ -161,8 +167,18 @@ fun DownloadIndicator(progress: Int, onCancel: () -> Unit) {
             .fillMaxSize()
             .padding(32.dp)
     ) {
+        // AuriZen Logo
+        Image(
+            painter = painterResource(id = R.raw.aurizen_logo),
+            contentDescription = "AuriZen Logo",
+            modifier = Modifier
+                .height(90.dp)
+                .padding(bottom = 16.dp)
+                .clip(RoundedCornerShape(12.dp))
+        )
+        
         Text(
-            text = "Downloading GemmaFriend Model...",
+            text = "Downloading AI Model...",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
@@ -194,6 +210,7 @@ fun DownloadIndicator(progress: Int, onCancel: () -> Unit) {
             text = "Download continues in the background and won't be interrupted by phone sleep.",
             style = MaterialTheme.typography.bodySmall,
             textAlign = TextAlign.Center,
+            color = Color.Gray,
             modifier = Modifier.padding(bottom = 16.dp)
         )
 
@@ -212,17 +229,32 @@ fun LoadingIndicator() {
             .fillMaxSize()
             .padding(32.dp)
     ) {
+        // Large AuriZen Logo
+        Image(
+            painter = painterResource(id = R.raw.aurizen_logo),
+            contentDescription = "AuriZen Logo",
+            modifier = Modifier
+                .height(110.dp)
+                .padding(bottom = 24.dp)
+                .clip(RoundedCornerShape(16.dp))
+        )
+        
         Text(
-            text = "Loading InnerCircle...",
+            text = "Loading...",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        CircularProgressIndicator()
+        
+        CircularProgressIndicator(
+            color = Color(0xFF64B5F6),
+            modifier = Modifier.padding(bottom = 16.dp)
+        )
+        
         Text(
-            text = "Setting up your mental health companion",
+            text = "Setting up your AI wellness companion",
             style = MaterialTheme.typography.bodyMedium,
             textAlign = TextAlign.Center,
-            modifier = Modifier.padding(top = 16.dp)
+            color = Color.Gray
         )
     }
 }

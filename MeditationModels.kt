@@ -45,6 +45,7 @@ data class MeditationStatistics(
     val lastSessionDate: Long
 )
 
+// UPDATED: Simplified custom meditation config - no longer needs complex state tracking
 data class CustomMeditationConfig(
     val sessionId: String,
     val totalDuration: Int, // in minutes
@@ -52,7 +53,5 @@ data class CustomMeditationConfig(
     val stepDuration: Int, // in seconds
     val focus: String,
     val mood: String,
-    val experience: String,
-    val currentStepIndex: Int = 0,
-    val isGenerating: Boolean = false
+    val experience: String
 )

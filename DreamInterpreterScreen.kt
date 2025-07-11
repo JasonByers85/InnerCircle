@@ -18,6 +18,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
 
 @Composable
 internal fun DreamInterpreterRoute(
@@ -249,7 +251,11 @@ fun DreamInterpreterScreen(
                             modifier = Modifier.weight(2f),
                             enabled = isInputEnabled && dreamDescription.isNotBlank()
                         ) {
-                            Icon(Icons.Default.Psychology, contentDescription = null)
+                            Image(
+                                painter = painterResource(id = R.drawable.aurizen),
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
+                            )
                             Spacer(modifier = Modifier.width(8.dp))
                             Text("Interpret Dream")
                         }

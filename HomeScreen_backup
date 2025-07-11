@@ -1,0 +1,413 @@
+package com.google.mediapipe.examples.llminference
+
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.painterResource
+import androidx.compose.foundation.Image
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
+import kotlinx.coroutines.delay
+import com.google.mediapipe.examples.llminference.ui.theme.AuriZenGradientBackground
+
+@Composable
+internal fun HomeRoute(
+    onNavigateToQuickChat: () -> Unit,
+    onNavigateToMeditation: () -> Unit,
+    onNavigateToBreathing: () -> Unit,
+    onNavigateToMoodTracker: () -> Unit,
+    onNavigateToDreamInterpreter: () -> Unit,
+    onNavigateToSettings: () -> Unit
+) {
+    val context = LocalContext.current
+    val userProfile = remember { UserProfile.getInstance(context) }
+
+    HomeScreen(
+        userProfile = userProfile,
+        onNavigateToQuickChat = onNavigateToQuickChat,
+        onNavigateToMeditation = onNavigateToMeditation,
+        onNavigateToBreathing = onNavigateToBreathing,
+        onNavigateToMoodTracker = onNavigateToMoodTracker,
+        onNavigateToDreamInterpreter = onNavigateToDreamInterpreter
+    )
+}
+
+@Composable
+fun HomeScreen(
+    userProfile: UserProfile,
+    onNavigateToQuickChat: () -> Unit,
+    onNavigateToMeditation: () -> Unit,
+    onNavigateToBreathing: () -> Unit,
+    onNavigateToMoodTracker: () -> Unit,
+    onNavigateToDreamInterpreter: () -> Unit
+) {
+    AuriZenGradientBackground {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            // AuriZen Header
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.1f)
+                    ),
+                    shape = RoundedCornerShape(20.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(8.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        // AuriZen Logo
+                        Image(
+                            painter = painterResource(id = R.raw.aurizen_logo),
+                            contentDescription = "AuriZen Logo",
+                            modifier = Modifier
+                                .height(72.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                        )
+                    }
+                }
+            }
+        item {
+            AnimatedWelcomeCard()
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14 .dp)
+            ) {
+                WellnessFeatureCard(
+                    title = "Mood Tracker",
+                    description = "Track and understand your emotions",
+                    icon = Icons.Default.Mood,
+                    onClick = onNavigateToMoodTracker,
+                    modifier = Modifier.weight(1f)
+                )
+
+                WellnessFeatureCard(
+                    title = "Quick Support",
+                    description = "Get instant wellness advice",
+                    icon = Icons.Default.Psychology,
+                    onClick = onNavigateToQuickChat,
+                    modifier = Modifier.weight(1f),
+                    useAuriZenIcon = true
+                )
+            }
+        }
+
+        item {
+            LargeWellnessFeatureCard(
+                title = "Guided Meditation",
+                description = "Personalized meditation sessions crafted by AuriZen",
+                icon = Icons.Default.SelfImprovement,
+                onClick = onNavigateToMeditation,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        item {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                WellnessFeatureCard(
+                    title = "Dream Interpreter",
+                    description = "Understand your dreams better",
+                    icon = Icons.Default.Bedtime,
+                    onClick = onNavigateToDreamInterpreter,
+                    modifier = Modifier.weight(1f)
+                )
+
+                WellnessFeatureCard(
+                    title = "Breathing Exercises",
+                    description = "Calm your mind and body",
+                    icon = Icons.Default.Air,
+                    onClick = onNavigateToBreathing,
+                    modifier = Modifier.weight(1f)
+                )
+            }
+        }
+
+        item {
+            PrivacyReminderCard()
+        }
+        }
+    }
+}
+
+@Composable
+private fun AnimatedWelcomeCard() {
+    var currentIndex by remember { mutableStateOf(0) }
+    
+    val contentSections = listOf(
+        WelcomeSection(
+            title = "🌿 Meet AuriZen",
+            subtitle = "Your private companion for mindfulness and clarity",
+            description = "AuriZen offers a moment of quiet. A gentle, local AI built to support your emotional well-being."
+        ),
+        WelcomeSection(
+            title = "🧘 Personalized Meditations",
+            subtitle = "Created just for you",
+            description = "AuriZen crafts unique meditation sessions based on your mood and needs. Each session is tailored to how you're feeling."
+        ),
+        WelcomeSection(
+            title = "🎵 Binaural Soundscapes",
+            subtitle = "Science-backed audio for deeper states",
+            description = "Experience enhanced focus, relaxation, or sleep with specially tuned binaural beats that guide your brainwaves to desired states."
+        ),
+        WelcomeSection(
+            title = "🌀 Local & Private",
+            subtitle = "Your thoughts are yours alone",
+            description = "AuriZen runs fully on your device. No data leaves your phone. No cloud, no tracking."
+        ),
+        WelcomeSection(
+            title = "🌤️ Supportive & Grounding",
+            subtitle = "Always by your side",
+            description = "From gentle reflections to soothing sounds, AuriZen helps you slow down, breathe, and reconnect."
+        ),
+        WelcomeSection(
+            title = "🌱 Designed for Daily Moments",
+            subtitle = "No pressure. No pop-ups.",
+            description = "Just small, mindful moments that help you feel more present and find your calm."
+        ),
+        WelcomeSection(
+            title = "✨ Feel lighter. Think clearer.",
+            subtitle = "Find your calm with AuriZen",
+            description = "Whether you're tracking your mood, practicing breathing, or simply pausing to check in with yourself."
+        )
+    )
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(7000) // Change every 6 seconds
+            currentIndex = (currentIndex + 1) % contentSections.size
+        }
+    }
+
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        AnimatedContent(
+            targetState = contentSections[currentIndex],
+            transitionSpec = {
+                fadeIn(animationSpec = tween(800)) togetherWith 
+                fadeOut(animationSpec = tween(800))
+            },
+            label = "welcome_content"
+        ) { section ->
+            Column(
+                modifier = Modifier
+                    .padding(12.dp)
+                    .height(100.dp), // Slightly reduced height
+                verticalArrangement = Arrangement.Top
+            ) {
+                Text(
+                    text = section.title,
+                    style = MaterialTheme.typography.titleSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer,
+                    maxLines = 1
+                )
+
+                Spacer(modifier = Modifier.height(3.dp))
+
+                Text(
+                    text = section.subtitle,
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f),
+                    maxLines = 2
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text(
+                    text = section.description,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.7f),
+                    maxLines = 3
+                )
+            }
+        }
+    }
+}
+
+private data class WelcomeSection(
+    val title: String,
+    val subtitle: String,
+    val description: String
+)
+
+@Composable
+private fun WellnessFeatureCard(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    useAuriZenIcon: Boolean = false
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(12.dp)
+                .fillMaxWidth()
+                .height(95.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            if (useAuriZenIcon) {
+                Image(
+                    painter = painterResource(id = R.drawable.aurizen),
+                    contentDescription = title,
+                    modifier = Modifier.size(24.dp)
+                )
+            } else {
+                Icon(
+                    imageVector = icon,
+                    contentDescription = title,
+                    modifier = Modifier.size(24.dp),
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                maxLines = 2
+            )
+        }
+    }
+}
+
+@Composable
+private fun LargeWellnessFeatureCard(
+    title: String,
+    description: String,
+    icon: ImageVector,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        onClick = onClick,
+        modifier = modifier,
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.8f)
+        ),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth()
+                .height(85.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = title,
+                modifier = Modifier.size(32.dp),
+                tint = MaterialTheme.colorScheme.primary
+            )
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            Text(
+                text = title,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = description,
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun PrivacyReminderCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.6f)
+        ),
+        shape = RoundedCornerShape(12.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                imageVector = Icons.Default.Lock,
+                contentDescription = "Privacy",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Text(
+                text = "All AI processing happens on your device. Your conversations and data stay completely private.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+            )
+        }
+    }
+}

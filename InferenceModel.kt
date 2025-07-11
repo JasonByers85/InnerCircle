@@ -21,6 +21,7 @@ class InferenceModel private constructor(context: Context) {
     private lateinit var llmInference: LlmInference
     private lateinit var llmInferenceSession: LlmInferenceSession
     private val TAG = InferenceModel::class.qualifiedName
+    private var isProcessing = false
 
     init {
         if (!modelExists(context)) {
@@ -45,7 +46,29 @@ class InferenceModel private constructor(context: Context) {
         if (::llmInferenceSession.isInitialized) {
             llmInferenceSession.close()
         }
+        isProcessing = false
         createSession()
+    }
+
+    fun forceStopAndReset() {
+        try {
+            if (::llmInferenceSession.isInitialized) {
+                try {
+                    llmInferenceSession.close()
+                } catch (e: IllegalStateException) {
+                    if (e.message?.contains("Previous invocation still processing") == true) {
+                        Log.w(TAG, "Session still processing, will skip force close to avoid crash")
+                        return // Don't try to recreate if still processing
+                    }
+                    throw e
+                }
+            }
+            // Force recreate the session to ensure clean state
+            createSession()
+            Log.d(TAG, "Force stopped and reset inference session")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error during force stop and reset", e)
+        }
     }
 
     private fun createEngine(context: Context) {
@@ -96,11 +119,24 @@ class InferenceModel private constructor(context: Context) {
             throw ModelSessionCreateFailException()
         }
 
+        if (isProcessing) {
+            throw IllegalStateException("Previous invocation still processing. Wait for done=true.")
+        }
+
         // Reset session for each new query to ensure clean state
         resetSession()
+        isProcessing = true
 
         llmInferenceSession.addQueryChunk(prompt)
-        return llmInferenceSession.generateResponseAsync(progressListener)
+        val future = llmInferenceSession.generateResponseAsync(progressListener)
+        
+        // Add completion callback to reset processing flag
+        future.addListener({
+            isProcessing = false
+            Log.d(TAG, "Inference completed, processing flag reset")
+        }, com.google.common.util.concurrent.MoreExecutors.directExecutor())
+        
+        return future
     }
 
     companion object {
@@ -118,6 +154,29 @@ class InferenceModel private constructor(context: Context) {
         fun resetInstance(context: Context): InferenceModel {
             instance?.close()
             return InferenceModel(context).also { instance = it }
+        }
+
+        fun forceReset(context: Context) {
+            try {
+                instance?.let { model ->
+                    try {
+                        model.isProcessing = false // Force reset processing flag
+                        model.close()
+                    } catch (e: IllegalStateException) {
+                        if (e.message?.contains("Previous invocation still processing") == true) {
+                            Log.w("InferenceModel", "Session still processing, marking instance as null without force close")
+                            model.isProcessing = false // Reset flag even if we can't close
+                            instance = null
+                            return // Don't try to close if still processing
+                        }
+                        throw e
+                    }
+                }
+                instance = null
+                Log.d("InferenceModel", "🛑 Force reset inference model instance")
+            } catch (e: Exception) {
+                Log.e("InferenceModel", "Error during force reset", e)
+            }
         }
 
         fun modelPathFromUrl(context: Context): String {
@@ -162,6 +221,10 @@ class InferenceModel private constructor(context: Context) {
             val exists = File(path).exists()
             Log.d("InferenceModel", "Checking model at path: $path, exists: $exists")
             return exists
+        }
+        
+        fun isAvailable(): Boolean {
+            return instance?.let { !it.isProcessing } ?: true
         }
     }
 }

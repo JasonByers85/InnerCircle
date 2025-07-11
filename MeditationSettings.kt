@@ -143,12 +143,18 @@ class MeditationSettings private constructor(context: Context) {
         val currentCount = getSessionsCompleted()
         val currentTime = getTotalMeditationTime()
         val today = System.currentTimeMillis()
+        val newStreak = calculateStreak(today)
+        val currentLongestStreak = getLongestStreak()
 
         prefs.edit().apply {
             putInt(KEY_SESSIONS_COMPLETED, currentCount + 1)
             putInt(KEY_TOTAL_MEDITATION_TIME, currentTime + durationMinutes)
             putLong(KEY_LAST_SESSION_DATE, today)
-            putInt(KEY_STREAK_COUNT, calculateStreak(today))
+            putInt(KEY_STREAK_COUNT, newStreak)
+            // Update longest streak if current streak is longer
+            if (newStreak > currentLongestStreak) {
+                putInt("longest_streak", newStreak)
+            }
             apply()
         }
     }
@@ -173,11 +179,29 @@ class MeditationSettings private constructor(context: Context) {
         val lastSession = getLastSessionDate()
         if (lastSession == 0L) return 1
 
-        val daysDiff = (today - lastSession) / (24 * 60 * 60 * 1000)
+        // Convert timestamps to calendar days to avoid time-of-day issues
+        val todayCalendar = java.util.Calendar.getInstance().apply {
+            timeInMillis = today
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        
+        val lastSessionCalendar = java.util.Calendar.getInstance().apply {
+            timeInMillis = lastSession
+            set(java.util.Calendar.HOUR_OF_DAY, 0)
+            set(java.util.Calendar.MINUTE, 0)
+            set(java.util.Calendar.SECOND, 0)
+            set(java.util.Calendar.MILLISECOND, 0)
+        }
+        
+        val daysDiff = (todayCalendar.timeInMillis - lastSessionCalendar.timeInMillis) / (24 * 60 * 60 * 1000)
+        
         return when {
-            daysDiff <= 1 -> getStreakCount() + 1  // Same day or next day
-            daysDiff == 1L -> 1  // Exactly one day gap, start new streak
-            else -> 1  // More than one day gap, reset streak
+            daysDiff == 0L -> getStreakCount()  // Same day - don't increment streak
+            daysDiff == 1L -> getStreakCount() + 1  // Next day - increment streak
+            else -> 1  // More than one day gap - reset streak
         }
     }
 

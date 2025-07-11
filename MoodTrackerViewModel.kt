@@ -83,26 +83,22 @@ class MoodTrackerViewModel(
 Mood Analysis Data:
 $moodSummary
 
-Provide insights including:
-1. Patterns you notice in their mood trends
-2. Positive observations and progress
-3. Practical suggestions for maintaining good moods
-4. Gentle recommendations for challenging periods
-5. Encouragement and validation
+Provide insights in EXACTLY 4-5 short paragraphs (2-3 sentences each). Keep it concise and focused:
+1. Brief observation about their mood patterns
+2. Positive highlights and progress
+3. 2-3 practical suggestions for wellness
+4. Gentle encouragement for challenges
+5. Motivational closing (optional)
 
-Keep the tone supportive, hopeful, and focused on growth. Avoid clinical language or diagnosing. Focus on empowerment and self-care strategies."""
+IMPORTANT: Keep each paragraph SHORT (2-3 sentences max). Total response should be under 400 words. Be supportive, hopeful, and actionable. Avoid clinical language or diagnosing."""
 
                 val prompt = """$systemPrompt
 
-Based on this mood history, provide supportive insights and practical wellness recommendations:"""
+Based on this mood history, provide supportive insights in exactly 4-5 short paragraphs (2-3 sentences each):"""
 
                 val responseJob = inferenceModel.generateResponseAsync(prompt) { partialResult, done ->
                     if (partialResult.isNotEmpty()) {
                         _aiInsights.value = _aiInsights.value + partialResult
-
-                        if (_isLoadingInsights.value) {
-                            _isLoadingInsights.value = false
-                        }
                     }
 
                     if (done) {
@@ -113,16 +109,15 @@ Based on this mood history, provide supportive insights and practical wellness r
                 responseJob.get()
 
             } catch (e: Exception) {
-                _aiInsights.value = """I'm having trouble analyzing your mood data right now, but I can see you're taking positive steps by tracking your feelings! 
+                _aiInsights.value = """I'm having trouble analyzing your mood data right now, but I can see you're taking positive steps by tracking your feelings!
 
-**General Mood Wellness Tips:**
-• **Celebrate small wins** - Notice and appreciate positive moments each day
-• **Practice self-compassion** - Be kind to yourself during challenging times
-• **Stay connected** - Reach out to friends, family, or support when needed
-• **Maintain routines** - Regular sleep, exercise, and meals support emotional balance
-• **Mindful moments** - Take brief pauses throughout the day to check in with yourself
+**Quick Wellness Reminders:**
+• **Celebrate small wins** - Notice positive moments each day
+• **Practice self-compassion** - Be kind to yourself during tough times
+• **Stay connected** - Reach out for support when needed
+• **Maintain routines** - Regular sleep, exercise, and meals help emotional balance
 
-Remember, mood fluctuations are completely normal. The fact that you're tracking and reflecting on your emotions shows great self-awareness and commitment to your wellbeing!"""
+Mood fluctuations are completely normal. Your commitment to tracking emotions shows great self-awareness!"""
 
                 _isLoadingInsights.value = false
             }
@@ -138,12 +133,23 @@ Remember, mood fluctuations are completely normal. The fact that you're tracking
         val startDate = if (recentEntries.isNotEmpty()) dateFormat.format(Date(recentEntries.first().timestamp)) else "N/A"
         val endDate = if (recentEntries.isNotEmpty()) dateFormat.format(Date(recentEntries.last().timestamp)) else "N/A"
 
-        // Calculate trends
-        val recentWeek = recentEntries.takeLast(7)
-        val previousWeek = recentEntries.dropLast(7).takeLast(7)
+        // Calculate trends by grouping by days
+        val dayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val groupedByDate = recentEntries.groupBy { entry ->
+            dayFormat.format(Date(entry.timestamp))
+        }.toSortedMap()
+        
+        val recentDays = groupedByDate.entries.toList().takeLast(7)
+        val previousDays = groupedByDate.entries.toList().dropLast(7).takeLast(7)
 
-        val recentPositive = recentWeek.count { it.mood in listOf("happy", "calm") }
-        val previousPositive = previousWeek.count { it.mood in listOf("happy", "calm") }
+        val recentPositive = recentDays.count { (date, entriesForDay) ->
+            val latestMoodForDay = entriesForDay.maxByOrNull { entry -> entry.timestamp }?.mood
+            latestMoodForDay in listOf("ecstatic", "happy", "confident", "calm")
+        }
+        val previousPositive = previousDays.count { (date, entriesForDay) ->
+            val latestMoodForDay = entriesForDay.maxByOrNull { entry -> entry.timestamp }?.mood
+            latestMoodForDay in listOf("ecstatic", "happy", "confident", "calm")
+        }
 
         // Common notes/themes
         val allNotes = recentEntries.mapNotNull { entry ->
@@ -159,13 +165,82 @@ Remember, mood fluctuations are completely normal. The fact that you're tracking
         ${moodCounts.entries.joinToString("\n") { "- ${it.key.capitalize()}: ${it.value} times (${(it.value * 100 / totalEntries)}%)" }}
         
         **Recent Trends:**
-        - Positive moods this week: $recentPositive/7
-        - Positive moods previous week: $previousPositive/7
+        - Positive mood days this week: $recentPositive/${recentDays.size}
+        - Positive mood days previous week: $previousPositive/${previousDays.size}
         - Trend: ${if (recentPositive >= previousPositive) "Stable or improving" else "Some challenges lately"}
+        - Unique tracking days: ${groupedByDate.size}
         
         **User Notes & Themes:**
         ${if (allNotes.isNotEmpty()) allNotes.takeLast(5).joinToString("\n") { "- \"$it\"" } else "No detailed notes provided"}
         """.trimIndent()
+    }
+    
+    fun generateMeditationParams(): Triple<String, String, String> {
+        val history = _moodHistory.value
+        if (history.isEmpty()) {
+            return Triple("mood-guided wellness", "balanced", "Beginner")
+        }
+        
+        // Create a comprehensive mood context for the meditation
+        val moodContext = createMoodContext(history)
+        
+        // Use "mood-guided" as focus to trigger contextual meditation generation
+        val focus = "mood-guided wellness"
+        
+        // Determine overall emotional state
+        val recentMoods = history.takeLast(7)
+        val moodCounts = recentMoods.groupingBy { it.mood }.eachCount()
+        val dominantMood = moodCounts.maxByOrNull { it.value }?.key ?: "balanced"
+        
+        val moodState = when (dominantMood) {
+            "ecstatic", "happy", "confident" -> "positive"
+            "calm" -> "balanced"
+            "sad", "anxious" -> "challenging"
+            "stressed" -> "stressed"
+            "tired" -> "low energy"
+            else -> "balanced"
+        }
+        
+        // Determine experience level based on meditation history
+        val experience = if (history.size >= 14) "Intermediate" else "Beginner"
+        
+        return Triple(focus, moodState, experience)
+    }
+    
+    private fun createMoodContext(history: List<MoodEntry>): String {
+        val recentEntries = history.takeLast(10)
+        val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
+        
+        // Group by recent days to show patterns
+        val dayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+        val groupedByDate = recentEntries.groupBy { entry ->
+            dayFormat.format(Date(entry.timestamp))
+        }.toSortedMap()
+        
+        val recentDays = groupedByDate.entries.toList().takeLast(7)
+        
+        val moodSummary = recentDays.joinToString("; ") { (date, entriesForDay) ->
+            val readableDate = dateFormat.format(Date(entriesForDay.first().timestamp))
+            val moods = entriesForDay.map { entry -> entry.mood }.distinct()
+            val notes = entriesForDay.mapNotNull { entry -> if (entry.note.isNotBlank()) entry.note else null }
+            
+            if (notes.isNotEmpty()) {
+                "$readableDate: ${moods.joinToString(", ")} (${notes.joinToString("; ")})"
+            } else {
+                "$readableDate: ${moods.joinToString(", ")}"
+            }
+        }
+        
+        // Calculate overall trends
+        val moodCounts = recentEntries.groupingBy { it.mood }.eachCount()
+        val patterns = moodCounts.entries.sortedByDescending { it.value }.take(3)
+            .joinToString(", ") { "${it.key} (${it.value} times)" }
+        
+        return "Recent mood patterns: $patterns. Daily summary: $moodSummary"
+    }
+    
+    fun getMoodContext(): String {
+        return createMoodContext(_moodHistory.value)
     }
 
     companion object {
