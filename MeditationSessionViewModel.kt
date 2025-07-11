@@ -57,6 +57,13 @@ class MeditationSessionViewModel(
     private val _totalSteps = MutableStateFlow(1)
     val totalSteps: StateFlow<Int> = _totalSteps.asStateFlow()
 
+    // For custom meditation sequential generation
+    private val _isGeneratingNextStep = MutableStateFlow(false)
+    val isGeneratingNextStep: StateFlow<Boolean> = _isGeneratingNextStep.asStateFlow()
+
+    private var customMeditationConfig: CustomMeditationConfig? = null
+    private var generatedStepsCount = 0
+
     private val meditationSettings = MeditationSettings.getInstance(context)
     private val audioManager = MeditationAudioManager(context)
 
@@ -122,6 +129,94 @@ class MeditationSessionViewModel(
 
     private fun setupMeditation() {
         Log.d(TAG, "Setting up meditation for type: $meditationType")
+        
+        if (meditationType.startsWith("custom_ai_")) {
+            setupCustomMeditation()
+        } else {
+            setupRegularMeditation()
+        }
+    }
+    
+    private fun setupCustomMeditation() {
+        // Load custom meditation configuration
+        customMeditationConfig = loadCustomMeditationConfig()
+        customMeditationConfig?.let { config ->
+            Log.d(TAG, "DEBUG: Loaded custom config - sessionId: ${config.sessionId}, focus: '${config.focus}', mood: '${config.mood}', experience: ${config.experience}")
+            _totalSteps.value = config.totalSteps
+            
+            // Clear any existing generic/fallback content to force fresh generation
+            clearGenericContent()
+            
+            // Try to load first step, if it doesn't exist, generate it immediately
+            val existingStep = loadCustomMeditationStep(0)
+            Log.d(TAG, "DEBUG: Existing first step found: ${existingStep != null}")
+            
+            val firstStep = existingStep ?: run {
+                Log.d(TAG, "DEBUG: First step not found, generating it now with preferences")
+                Log.d(TAG, "DEBUG: User focus: '${config.focus}', mood: '${config.mood}', experience: ${config.experience}")
+                
+                // Set generating state and show better description
+                _isGeneratingNextStep.value = true
+                _currentStep.value = MeditationStep(
+                    title = "Generating Your Personalized Practice...",
+                    description = "Creating custom meditation based on your preferences: Focus on ${config.focus.ifEmpty { "mindfulness" }}, Current mood: ${config.mood.ifEmpty { "neutral" }}, Experience: ${config.experience}",
+                    guidance = "Please wait while we create your personalized meditation experience tailored to your focus on ${config.focus.ifEmpty { "mindfulness" }}...",
+                    durationSeconds = config.stepDuration
+                )
+                
+                // Generate the first step immediately
+                generateFirstCustomStepWithTimeout(config)
+                
+                // Return the generating placeholder
+                _currentStep.value
+            }
+            
+            if (existingStep != null) {
+                _currentStep.value = firstStep
+                Log.d(TAG, "DEBUG: Using existing first step: '${firstStep.title}' - '${firstStep.guidance.take(50)}...'")
+            }
+            
+            _timeRemaining.value = firstStep.durationSeconds
+            _totalTimeRemaining.value = config.totalDuration * 60 // Convert to seconds
+            _currentStepIndex.value = 0
+            _sessionState.value = MeditationSessionState.ACTIVE
+            
+            // Initialize generation counter - if we generated first step, count it
+            generatedStepsCount = if (existingStep != null) 1 else 0
+            Log.d(TAG, "DEBUG: Generated steps count: $generatedStepsCount")
+            
+            Log.d(TAG, "Custom meditation setup: ${config.totalSteps} steps, ${config.totalDuration} minutes")
+        } ?: run {
+            // If config loading fails, fall back to a basic meditation
+            Log.w(TAG, "Failed to load custom meditation config, falling back to basic meditation")
+            setupBasicMeditation()
+        }
+    }
+    
+    private fun setupBasicMeditation() {
+        val basicSteps = listOf(
+            MeditationStep(
+                title = "Basic Meditation",
+                description = "Simple mindfulness practice",
+                guidance = "Focus gently on your breath and be present in this moment.",
+                durationSeconds = 300
+            )
+        )
+        
+        meditationSteps = basicSteps
+        totalSessionDuration = basicSteps.sumOf { it.durationSeconds }
+        
+        _currentStep.value = basicSteps[0]
+        _timeRemaining.value = basicSteps[0].durationSeconds
+        _totalTimeRemaining.value = totalSessionDuration
+        _currentStepIndex.value = 0
+        _totalSteps.value = basicSteps.size
+        _sessionState.value = MeditationSessionState.ACTIVE
+        
+        Log.d(TAG, "Basic meditation fallback setup complete")
+    }
+    
+    private fun setupRegularMeditation() {
         meditationSteps = getMeditationSteps(meditationType)
         if (meditationSteps.isNotEmpty()) {
             // Calculate total session duration
@@ -198,6 +293,11 @@ class MeditationSessionViewModel(
         audioManager.stopBackgroundSound()
         audioManager.stopBinauralTone()
         textToSpeech?.stop()
+        
+        // Reset custom meditation state
+        customMeditationConfig = null
+        generatedStepsCount = 0
+        _isGeneratingNextStep.value = false
     }
 
     fun toggleSound() {
@@ -357,6 +457,11 @@ class MeditationSessionViewModel(
                 delay(1000)
                 _timeRemaining.value -= 1
                 _totalTimeRemaining.value -= 1
+                
+                // For custom meditations, generate next step when 60 seconds remaining
+                if (meditationType.startsWith("custom_ai_") && _timeRemaining.value == 60) {
+                    checkAndGenerateNextCustomStep()
+                }
             }
 
             if (_timeRemaining.value <= 0) {
@@ -369,8 +474,18 @@ class MeditationSessionViewModel(
         currentStepIndexValue++
         _currentStepIndex.value = currentStepIndexValue
 
-        if (currentStepIndexValue < meditationSteps.size) {
-            val nextStep = meditationSteps[currentStepIndexValue]
+        if (currentStepIndexValue < (_totalSteps.value ?: meditationSteps.size)) {
+            val nextStep = if (meditationType.startsWith("custom_ai_")) {
+                // For custom meditation, try to load or generate next step
+                loadCustomMeditationStep(currentStepIndexValue) ?: run {
+                    // Generate next step if it doesn't exist
+                    checkAndGenerateNextCustomStep()
+                    createPlaceholderStep(currentStepIndexValue, customMeditationConfig!!)
+                }
+            } else {
+                meditationSteps[currentStepIndexValue]
+            }
+            
             _currentStep.value = nextStep
             _timeRemaining.value = nextStep.durationSeconds
 
@@ -383,9 +498,159 @@ class MeditationSessionViewModel(
                 startTimer()
             }
 
-            Log.d(TAG, "Moved to step ${currentStepIndexValue + 1}/${meditationSteps.size}: ${nextStep.title}")
+            Log.d(TAG, "Moved to step ${currentStepIndexValue + 1}/${_totalSteps.value}: ${nextStep.title}")
         } else {
             completeSession()
+        }
+    }
+    
+    private fun checkAndGenerateNextCustomStep() {
+        customMeditationConfig?.let { config ->
+            val nextStepToGenerate = generatedStepsCount + 1
+            if (nextStepToGenerate < config.totalSteps && currentStepIndexValue >= nextStepToGenerate - 1) {
+                _isGeneratingNextStep.value = true
+                Log.d(TAG, "Generating step $nextStepToGenerate for custom meditation")
+                generateNextCustomStep(config, nextStepToGenerate)
+            }
+        }
+    }
+    
+    private fun generateNextCustomStep(config: CustomMeditationConfig, stepNumber: Int) {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "Generating step $stepNumber for custom meditation")
+                
+                // Get the inference model instance
+                val inferenceModel = InferenceModel.getInstance(context)
+                
+                // Build prompt for this step
+                val stepType = when {
+                    stepNumber == 0 -> "opening and settling"
+                    stepNumber == config.totalSteps - 1 -> "closing and integration"
+                    stepNumber == 1 -> "initial focus and grounding"
+                    stepNumber == config.totalSteps - 2 -> "deepening and preparation for completion"
+                    else -> "main practice"
+                }
+                
+                val prompt = """Create a ${stepType} meditation step (${stepNumber + 1} of ${config.totalSteps}) for a ${config.totalDuration}-minute meditation.
+
+USER'S MEDITATION FOCUS:
+- Primary focus: ${config.focus.ifEmpty { "general relaxation and mindfulness" }}
+- Current mood: ${config.mood.ifEmpty { "calm and centered" }}
+- Experience level: ${config.experience}
+- Step duration: ${config.stepDuration} seconds
+
+This is step ${stepNumber + 1} in their personalized journey. Create guidance that builds on their chosen focus area and continues their meditation flow naturally.
+
+Title: [Brief step name related to their focus]
+Guidance: [2-3 sentences of meditation instruction that incorporates their focus area: ${config.focus}]"""
+                
+                var fullResponse = ""
+                
+                val responseFuture = inferenceModel.generateResponseAsync(prompt) { partialResult, done ->
+                    if (partialResult != null) {
+                        fullResponse += partialResult
+                    }
+                    
+                    if (done) {
+                        try {
+                            // Parse the response
+                            val lines = fullResponse.trim().split("\n")
+                            var title = "Meditation Step ${stepNumber + 1}"
+                            var guidance = "Focus on your breath and be present in this moment."
+                            
+                            for (line in lines) {
+                                when {
+                                    line.startsWith("Title:", ignoreCase = true) -> {
+                                        title = line.substringAfter(":").trim()
+                                    }
+                                    line.startsWith("Guidance:", ignoreCase = true) -> {
+                                        guidance = line.substringAfter(":").trim()
+                                    }
+                                }
+                            }
+                            
+                            val newStep = MeditationStep(
+                                title = title,
+                                description = "Custom meditation step",
+                                guidance = guidance,
+                                durationSeconds = config.stepDuration
+                            )
+                            
+                            // Store the generated step
+                            storeGeneratedStep(config.sessionId, stepNumber, newStep)
+                            generatedStepsCount++
+                            
+                            Log.d(TAG, "Generated step $stepNumber: $title")
+                            
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error parsing step response", e)
+                            // Create fallback step
+                            val fallbackStep = createFallbackMeditationStep(stepNumber, config.stepDuration)
+                            storeGeneratedStep(config.sessionId, stepNumber, fallbackStep)
+                            generatedStepsCount++
+                        }
+                        
+                        _isGeneratingNextStep.value = false
+                    }
+                }
+                
+                // Wait for completion
+                responseFuture.get()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error generating next custom step", e)
+                // Create fallback step
+                val fallbackStep = createFallbackMeditationStep(stepNumber, config.stepDuration)
+                storeGeneratedStep(config.sessionId, stepNumber, fallbackStep)
+                generatedStepsCount++
+                _isGeneratingNextStep.value = false
+            }
+        }
+    }
+    
+    private fun createFallbackMeditationStep(stepIndex: Int, stepDuration: Int): MeditationStep {
+        val fallbackSteps = listOf(
+            "Take three deep breaths and settle into your meditation space.",
+            "Notice your natural breathing rhythm and follow its gentle flow.",
+            "Observe any thoughts that arise and let them pass like clouds in the sky.",
+            "Feel the support of the ground beneath you and relax into this moment.",
+            "Bring your attention to the present moment with gentle awareness.",
+            "Take a moment to appreciate this time you've given yourself for peace.",
+            "Breathe deeply and prepare to carry this calm with you."
+        )
+        
+        val guidance = fallbackSteps.getOrNull(stepIndex) ?: fallbackSteps[0]
+        
+        return MeditationStep(
+            title = "Mindful Moment ${stepIndex + 1}",
+            description = "Guided meditation practice",
+            guidance = guidance,
+            durationSeconds = stepDuration
+        )
+    }
+    
+    private fun storeGeneratedStep(sessionId: String, stepNumber: Int, step: MeditationStep) {
+        try {
+            val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            
+            Log.d(TAG, "DEBUG: Storing step $stepNumber for session $sessionId")
+            Log.d(TAG, "DEBUG: Step details - Title: '${step.title}', Guidance: '${step.guidance.take(100)}...'")
+            
+            editor.putString("${sessionId}_step_${stepNumber}_title", step.title)
+            editor.putString("${sessionId}_step_${stepNumber}_description", step.description)
+            editor.putString("${sessionId}_step_${stepNumber}_guidance", step.guidance)
+            editor.putInt("${sessionId}_step_${stepNumber}_duration", step.durationSeconds)
+            
+            // Update generated count
+            editor.putInt("${sessionId}_generated_steps", stepNumber + 1)
+            
+            val success = editor.commit() // Use commit instead of apply for immediate write
+            Log.d(TAG, "DEBUG: Storage ${if (success) "successful" else "failed"} for step $stepNumber")
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG: Error storing generated step", e)
         }
     }
 
@@ -687,12 +952,111 @@ class MeditationSessionViewModel(
         }
     }
 
+    private fun loadCustomMeditationConfig(): CustomMeditationConfig? {
+        return try {
+            val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
+            
+            Log.d(TAG, "DEBUG: Loading config for meditation type: $meditationType")
+            
+            val duration = prefs.getInt("${meditationType}_duration", 15)
+            val totalSteps = prefs.getInt("${meditationType}_total_steps", 4)
+            val stepDuration = prefs.getInt("${meditationType}_step_duration", 225)
+            val focus = prefs.getString("${meditationType}_focus", "") ?: ""
+            val mood = prefs.getString("${meditationType}_mood", "") ?: ""
+            val experience = prefs.getString("${meditationType}_experience", "Beginner") ?: "Beginner"
+            
+            Log.d(TAG, "DEBUG: Loaded config values:")
+            Log.d(TAG, "DEBUG: - Duration: $duration minutes")
+            Log.d(TAG, "DEBUG: - Total steps: $totalSteps")
+            Log.d(TAG, "DEBUG: - Step duration: $stepDuration seconds")
+            Log.d(TAG, "DEBUG: - Focus: '$focus'")
+            Log.d(TAG, "DEBUG: - Mood: '$mood'")
+            Log.d(TAG, "DEBUG: - Experience: '$experience'")
+            
+            val config = CustomMeditationConfig(
+                sessionId = meditationType,
+                totalDuration = duration,
+                totalSteps = totalSteps,
+                stepDuration = stepDuration,
+                focus = focus,
+                mood = mood,
+                experience = experience
+            )
+            
+            Log.d(TAG, "DEBUG: Successfully created config for session: ${config.sessionId}")
+            config
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG: Error loading custom meditation config", e)
+            null
+        }
+    }
+    
+    private fun loadCustomMeditationStep(stepIndex: Int): MeditationStep? {
+        return try {
+            val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
+            val title = prefs.getString("${meditationType}_step_${stepIndex}_title", null)
+            val description = prefs.getString("${meditationType}_step_${stepIndex}_description", null)
+            val guidance = prefs.getString("${meditationType}_step_${stepIndex}_guidance", null)
+            val duration = prefs.getInt("${meditationType}_step_${stepIndex}_duration", 0)
+            
+            Log.d(TAG, "DEBUG: Loading step $stepIndex for session $meditationType")
+            Log.d(TAG, "DEBUG: Found - title: ${title != null}, description: ${description != null}, guidance: ${guidance != null}, duration: $duration")
+            Log.d(TAG, "DEBUG: Raw stored values:")
+            Log.d(TAG, "DEBUG: - Title: '$title'")
+            Log.d(TAG, "DEBUG: - Description: '$description'")
+            Log.d(TAG, "DEBUG: - Guidance: '$guidance'")
+            Log.d(TAG, "DEBUG: - Duration: $duration")
+            
+            if (title != null && description != null && guidance != null && duration > 0) {
+                // Check if this is generic fallback content - if so, treat as not found
+                val isGenericContent = guidance.contains("Focus on your breath and be present in this moment") ||
+                                     guidance.contains("Focus gently on your breath") ||
+                                     title.startsWith("Meditation Step") ||
+                                     title == "Basic Meditation"
+                
+                if (isGenericContent) {
+                    Log.d(TAG, "DEBUG: Found generic/fallback content for step $stepIndex, treating as not found to regenerate")
+                    Log.d(TAG, "DEBUG: Generic content detected: '$guidance'")
+                    return null
+                }
+                
+                val step = MeditationStep(title, description, guidance, duration)
+                Log.d(TAG, "DEBUG: Successfully loaded custom step $stepIndex: '$title' - '${guidance.take(100)}...'")
+                step
+            } else {
+                Log.d(TAG, "DEBUG: Step $stepIndex not found or incomplete")
+                null
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG: Error loading custom meditation step $stepIndex", e)
+            null
+        }
+    }
+    
+    private fun createPlaceholderStep(stepIndex: Int, config: CustomMeditationConfig): MeditationStep {
+        val focusText = if (config.focus.isNotEmpty()) " focusing on ${config.focus}" else ""
+        val moodText = if (config.mood.isNotEmpty()) " You're feeling ${config.mood} and that's perfectly okay." else ""
+        
+        return when (stepIndex) {
+            0 -> MeditationStep(
+                title = "Welcome to Your Practice",
+                description = "Beginning your personalized meditation",
+                guidance = "Welcome to your custom meditation$focusText.$moodText Take three deep breaths and allow yourself to settle into this moment. Your personalized guidance is being prepared.",
+                durationSeconds = config.stepDuration
+            )
+            else -> MeditationStep(
+                title = "Continuing Practice",
+                description = "Deepening your meditation",
+                guidance = "Continue with your meditation practice$focusText, allowing each breath to bring you deeper into relaxation.",
+                durationSeconds = config.stepDuration
+            )
+        }
+    }
+
     private fun loadCustomMeditationSteps(sessionId: String): List<MeditationStep> {
         try {
             val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
             val totalSteps = prefs.getInt("${sessionId}_total_steps", 0)
-
-            Log.d(TAG, "Loading custom meditation $sessionId with $totalSteps steps")
 
             if (totalSteps > 0) {
                 val steps = mutableListOf<MeditationStep>()
@@ -709,59 +1073,362 @@ class MeditationSessionViewModel(
                         guidance = guidance,
                         durationSeconds = duration
                     ))
-
-                    Log.d(TAG, "Loaded step ${i + 1}: $title (${duration}s)")
-                    Log.d(TAG, "Step guidance: ${guidance.take(50)}...")
                 }
-
                 return steps
             } else {
-                Log.w(TAG, "No steps found for custom session $sessionId")
-                Log.d(TAG, "Available keys in SharedPreferences:")
-                prefs.all.keys.filter { it.startsWith(sessionId) }.forEach { key ->
-                    Log.d(TAG, "Key: $key = ${prefs.all[key]}")
-                }
-                return createFallbackCustomSession()
+                // Return placeholder steps
+                return listOf(
+                    MeditationStep(
+                        title = "Custom Meditation",
+                        description = "AI-generated meditation step",
+                        guidance = "Focus on your breath and allow yourself to relax deeply.",
+                        durationSeconds = 300
+                    )
+                )
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error loading custom meditation steps for $sessionId", e)
-            return createFallbackCustomSession()
+            return listOf(
+                MeditationStep(
+                    title = "Basic Meditation",
+                    description = "Simple mindfulness practice",
+                    guidance = "Focus gently on your breath and be present in this moment.",
+                    durationSeconds = 300
+                )
+            )
         }
     }
 
-    private fun createFallbackCustomSession(): List<MeditationStep> {
-        return listOf(
-            MeditationStep(
-                title = "Custom Meditation Beginning",
-                description = "Starting your personalized session",
-                guidance = "Welcome to your custom meditation. Find a comfortable position and take a few deep breaths.",
-                durationSeconds = 120
-            ),
-            MeditationStep(
-                title = "Mindful Breathing",
-                description = "Focusing on your breath",
-                guidance = "Turn your attention to your natural breathing. Notice each breath as it flows in and out.",
-                durationSeconds = 240
-            ),
-            MeditationStep(
-                title = "Body Awareness",
-                description = "Connecting with your body",
-                guidance = "Scan through your body, noticing any sensations with gentle curiosity.",
-                durationSeconds = 300
-            ),
-            MeditationStep(
-                title = "Peaceful Presence",
-                description = "Resting in awareness",
-                guidance = "Simply be present. Allow thoughts and feelings to come and go naturally.",
-                durationSeconds = 240
-            ),
-            MeditationStep(
-                title = "Closing Integration",
-                description = "Completing your practice",
-                guidance = "Appreciate this time you've given yourself. Slowly return your awareness to your surroundings.",
-                durationSeconds = 120
-            )
+    fun handleCustomMeditationError() {
+        Log.w(TAG, "Custom meditation failed, resetting to allow other meditations")
+        // Reset all custom meditation state
+        customMeditationConfig = null
+        generatedStepsCount = 0
+        _isGeneratingNextStep.value = false
+        _sessionState.value = MeditationSessionState.PREPARING
+        
+        // Stop any ongoing processes
+        timerJob?.cancel()
+        audioManager.stopBackgroundSound()
+        audioManager.stopBinauralTone()
+        textToSpeech?.stop()
+        _isPlaying.value = false
+    }
+
+    // DEBUG FUNCTIONS - Remove in production
+    fun clearCustomMeditationData() {
+        try {
+            val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            
+            // Clear all data for this session
+            val allKeys = prefs.all.keys.filter { it.startsWith(meditationType) }
+            allKeys.forEach { key ->
+                editor.remove(key)
+            }
+            
+            val success = editor.commit()
+            Log.d(TAG, "DEBUG: Cleared custom meditation data for $meditationType - Success: $success")
+            Log.d(TAG, "DEBUG: Cleared keys: $allKeys")
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG: Error clearing custom meditation data", e)
+        }
+    }
+    
+    fun debugPrintStoredData() {
+        try {
+            val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
+            val allData = prefs.all
+            
+            Log.d(TAG, "DEBUG: All stored meditation data:")
+            allData.forEach { (key, value) ->
+                if (key.startsWith(meditationType)) {
+                    Log.d(TAG, "DEBUG: $key = $value")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG: Error printing stored data", e)
+        }
+    }
+
+    private fun generateFirstCustomStep(config: CustomMeditationConfig) {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "DEBUG: Starting first custom step generation")
+                Log.d(TAG, "DEBUG: Config details - Focus: '${config.focus}', Mood: '${config.mood}', Experience: '${config.experience}'")
+                
+                // Get the inference model instance
+                val inferenceModel = InferenceModel.getInstance(context)
+                
+                // Build a detailed prompt for the first step
+                val prompt = """Create an opening meditation step for a ${config.totalDuration}-minute custom meditation focused on ${config.focus}.
+
+USER'S CONTEXT:
+- Focus area: ${config.focus.ifEmpty { "general relaxation and mindfulness" }}
+- Current mood: ${config.mood.ifEmpty { "ready for meditation" }}
+- Experience level: ${config.experience}
+
+Please respond in this exact format:
+
+Title: [A brief, welcoming step name that relates to their focus]
+Guidance: [2-3 clear, simple sentences that welcome them and introduce their specific focus area. Keep it conversational and supportive.]
+
+Make it personal and specific to their goal of ${config.focus}."""
+                
+                Log.d(TAG, "DEBUG: Generated prompt: $prompt")
+                
+                var fullResponse = ""
+                
+                Log.d(TAG, "DEBUG: Starting async generation...")
+                
+                inferenceModel.generateResponseAsync(prompt) { partialResult, done ->
+                    if (partialResult != null) {
+                        fullResponse += partialResult
+                        Log.d(TAG, "DEBUG: Partial response received: ${partialResult.take(50)}...")
+                    }
+                    
+                    if (done) {
+                        viewModelScope.launch {
+                            Log.d(TAG, "DEBUG: Full response received: $fullResponse")
+                            try {
+                                // Parse the response - handle multiple formats
+                                val lines = fullResponse.trim().split("\n")
+                                var title = "Welcome to Your Custom Practice"
+                                var guidance = "Welcome to your personalized meditation. Find a comfortable position and let's begin this journey together."
+                                
+                                // Try to parse different formats
+                                for (line in lines) {
+                                    when {
+                                        // Format: "Title: Something"
+                                        line.startsWith("Title:", ignoreCase = true) -> {
+                                            title = line.substringAfter(":").trim()
+                                            Log.d(TAG, "DEBUG: Parsed title (format 1): '$title'")
+                                        }
+                                        // Format: "Guidance: Something" 
+                                        line.startsWith("Guidance:", ignoreCase = true) -> {
+                                            guidance = line.substringAfter(":").trim()
+                                            Log.d(TAG, "DEBUG: Parsed guidance (format 1): '$guidance'")
+                                        }
+                                        // Format: "## Step 1: Something" or "# Something"
+                                        line.startsWith("##") || line.startsWith("# ") -> {
+                                            val titleText = line.replace("##", "").replace("#", "").trim()
+                                            if (titleText.contains(":")) {
+                                                title = titleText.substringAfter(":").trim()
+                                            } else {
+                                                title = titleText
+                                            }
+                                            Log.d(TAG, "DEBUG: Parsed title (format 2): '$title'")
+                                        }
+                                        // Format: "**Guidance:** Something"
+                                        line.startsWith("**Guidance:**", ignoreCase = true) -> {
+                                            guidance = line.substringAfter("**Guidance:**").trim()
+                                            Log.d(TAG, "DEBUG: Parsed guidance (format 2): '$guidance'")
+                                        }
+                                    }
+                                }
+                                
+                                // If we didn't find guidance in the expected format, try to extract the main content
+                                if (guidance == "Welcome to your personalized meditation. Find a comfortable position and let's begin this journey together.") {
+                                    // Look for the main guidance content after **Guidance:**
+                                    val guidanceStart = fullResponse.indexOf("**Guidance:**")
+                                    if (guidanceStart != -1) {
+                                        val afterGuidance = fullResponse.substring(guidanceStart + "**Guidance:**".length)
+                                        // Extract until next major section or end
+                                        val nextSection = afterGuidance.indexOf("**")
+                                        val mainGuidance = if (nextSection != -1) {
+                                            afterGuidance.substring(0, nextSection)
+                                        } else {
+                                            afterGuidance
+                                        }
+                                        guidance = mainGuidance.trim().split("\n").firstOrNull()?.trim() ?: guidance
+                                        Log.d(TAG, "DEBUG: Extracted main guidance: '$guidance'")
+                                    }
+                                }
+                                
+                                val firstStep = MeditationStep(
+                                    title = title,
+                                    description = "Personalized opening based on your preferences",
+                                    guidance = guidance,
+                                    durationSeconds = config.stepDuration
+                                )
+                                
+                                Log.d(TAG, "DEBUG: Created first step - Title: '$title', Guidance: '${guidance.take(100)}...'")
+                                
+                                // Store the generated first step
+                                storeGeneratedStep(config.sessionId, 0, firstStep)
+                                generatedStepsCount = 1
+                                
+                                // Update the current step immediately
+                                _currentStep.value = firstStep
+                                _isGeneratingNextStep.value = false
+                                
+                                Log.d(TAG, "DEBUG: Successfully updated current step with generated content")
+                                
+                                // If TTS is enabled and ready, speak the new guidance
+                                if (_ttsEnabled.value && isTtsReady && _isPlaying.value) {
+                                    speakGuidance(guidance)
+                                }
+                                
+                            } catch (e: Exception) {
+                                Log.e(TAG, "DEBUG: Error parsing first step response", e)
+                                Log.e(TAG, "DEBUG: Raw response was: $fullResponse")
+                                // Create fallback step with user preferences
+                                val fallbackStep = createPersonalizedFallbackStep(0, config)
+                                storeGeneratedStep(config.sessionId, 0, fallbackStep)
+                                _currentStep.value = fallbackStep
+                                generatedStepsCount = 1
+                                _isGeneratingNextStep.value = false
+                            }
+                        }
+                    }
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "DEBUG: Error generating first custom step", e)
+                // Create fallback step with user preferences
+                val fallbackStep = createPersonalizedFallbackStep(0, config)
+                storeGeneratedStep(config.sessionId, 0, fallbackStep)
+                _currentStep.value = fallbackStep
+                generatedStepsCount = 1
+                _isGeneratingNextStep.value = false
+            }
+        }
+    }
+    
+    private fun createPersonalizedFallbackStep(stepIndex: Int, config: CustomMeditationConfig): MeditationStep {
+        val personalizedGuidance = when (stepIndex) {
+            0 -> {
+                val focusText = if (config.focus.isNotEmpty()) " focusing on ${config.focus}" else ""
+                val moodText = if (config.mood.isNotEmpty()) " You're feeling ${config.mood} and that's perfectly okay." else ""
+                "Welcome to your personalized meditation$focusText.$moodText Take three deep breaths and allow yourself to settle into this moment."
+            }
+            else -> {
+                val focusText = if (config.focus.isNotEmpty()) " with ${config.focus}" else ""
+                "Continue your meditation practice$focusText. Allow each breath to bring you deeper into relaxation and awareness."
+            }
+        }
+        
+        return MeditationStep(
+            title = if (stepIndex == 0) "Welcome to Your Practice" else "Continuing Your Journey",
+            description = "Personalized meditation step",
+            guidance = personalizedGuidance,
+            durationSeconds = config.stepDuration
         )
+    }
+
+    // Function to clear generic/fallback content to force regeneration
+    fun clearGenericContent() {
+        try {
+            val prefs = context.getSharedPreferences("custom_meditations", Context.MODE_PRIVATE)
+            val editor = prefs.edit()
+            
+            Log.d(TAG, "DEBUG: Checking for generic content to clear...")
+            
+            // Check all steps for this session
+            val totalSteps = prefs.getInt("${meditationType}_total_steps", 4)
+            var clearedCount = 0
+            
+            for (i in 0 until totalSteps) {
+                val guidance = prefs.getString("${meditationType}_step_${i}_guidance", null)
+                val title = prefs.getString("${meditationType}_step_${i}_title", null)
+                
+                val isGenericContent = guidance?.let { g ->
+                    g.contains("Focus on your breath and be present in this moment") ||
+                    g.contains("Focus gently on your breath") ||
+                    g.contains("gently settle into a comfortable posture")
+                } ?: false
+                
+                val isGenericTitle = title?.let { t ->
+                    t.startsWith("Meditation Step") || t == "Basic Meditation"
+                } ?: false
+                
+                if (isGenericContent || isGenericTitle) {
+                    Log.d(TAG, "DEBUG: Clearing generic step $i - Title: '$title', Guidance: '${guidance?.take(50)}...'")
+                    editor.remove("${meditationType}_step_${i}_title")
+                    editor.remove("${meditationType}_step_${i}_description")
+                    editor.remove("${meditationType}_step_${i}_guidance")
+                    editor.remove("${meditationType}_step_${i}_duration")
+                    clearedCount++
+                }
+            }
+            
+            if (clearedCount > 0) {
+                // Reset generated steps count
+                editor.putInt("${meditationType}_generated_steps", 0)
+                generatedStepsCount = 0
+                
+                val success = editor.commit()
+                Log.d(TAG, "DEBUG: Cleared $clearedCount generic steps - Success: $success")
+            } else {
+                Log.d(TAG, "DEBUG: No generic content found to clear")
+            }
+            
+        } catch (e: Exception) {
+            Log.e(TAG, "DEBUG: Error clearing generic content", e)
+        }
+    }
+
+    // Test AI model functionality
+    fun testAIGeneration() {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "DEBUG: Testing AI model generation...")
+                val inferenceModel = InferenceModel.getInstance(context)
+                
+                val testPrompt = "Say hello and confirm you are working properly. Just respond with 'Hello, I am working correctly.'"
+                var fullResponse = ""
+                
+                val responseFuture = inferenceModel.generateResponseAsync(testPrompt) { partialResult, done ->
+                    if (partialResult != null) {
+                        fullResponse += partialResult
+                        Log.d(TAG, "DEBUG: AI Test - Partial: $partialResult")
+                    }
+                    
+                    if (done) {
+                        Log.d(TAG, "DEBUG: AI Test - Full response: '$fullResponse'")
+                    }
+                }
+                
+                responseFuture.get()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "DEBUG: AI Test failed", e)
+            }
+        }
+    }
+
+    // Add timeout for AI generation to prevent app hanging
+    private fun generateFirstCustomStepWithTimeout(config: CustomMeditationConfig) {
+        viewModelScope.launch {
+            try {
+                Log.d(TAG, "DEBUG: Starting first custom step generation with timeout")
+                
+                // Set a timeout of 30 seconds
+                val timeoutJob = launch {
+                    delay(30000) // 30 seconds
+                    Log.w(TAG, "DEBUG: AI generation timeout, using fallback")
+                    if (_isGeneratingNextStep.value) {
+                        val fallbackStep = createPersonalizedFallbackStep(0, config)
+                        storeGeneratedStep(config.sessionId, 0, fallbackStep)
+                        _currentStep.value = fallbackStep
+                        generatedStepsCount = 1
+                        _isGeneratingNextStep.value = false
+                    }
+                }
+                
+                generateFirstCustomStep(config)
+                
+                // Cancel timeout if generation completes
+                delay(100) // Small delay to let generation start
+                while (_isGeneratingNextStep.value && timeoutJob.isActive) {
+                    delay(500)
+                }
+                timeoutJob.cancel()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "DEBUG: Error in timeout wrapper", e)
+            }
+        }
     }
 
     companion object {

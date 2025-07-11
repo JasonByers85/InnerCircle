@@ -43,6 +43,7 @@ internal fun MeditationSessionRoute(
     val totalTimeRemaining by viewModel.totalTimeRemaining.collectAsStateWithLifecycle()
     val currentStepIndex by viewModel.currentStepIndex.collectAsStateWithLifecycle()
     val totalSteps by viewModel.totalSteps.collectAsStateWithLifecycle()
+    val isGeneratingNextStep by viewModel.isGeneratingNextStep.collectAsStateWithLifecycle()
     val isPlaying by viewModel.isPlaying.collectAsStateWithLifecycle()
     val backgroundSound by viewModel.backgroundSound.collectAsStateWithLifecycle()
     val soundEnabled by viewModel.soundEnabled.collectAsStateWithLifecycle()
@@ -280,12 +281,14 @@ fun MeditationSessionScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Current guidance text - hide for custom AI meditations as they're audio-only
-        val isCustomMeditation = meditationType.startsWith("custom_ai_") ||
-                                currentStep.title.contains("AI", ignoreCase = true) ||
-                                currentStep.title.contains("custom", ignoreCase = true)
+        // Current guidance text - show when TTS is disabled
+        val isCustomMeditation = meditationType.startsWith("custom_ai_")
+        val shouldShowText = currentStep.guidance.isNotEmpty() && (
+            !isCustomMeditation || // Always show for regular meditations
+            (isCustomMeditation && !ttsEnabled) // Show for custom when TTS is off
+        )
 
-        if (currentStep.guidance.isNotEmpty() && !isCustomMeditation) {
+        if (shouldShowText) {
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 colors = CardDefaults.cardColors(

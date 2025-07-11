@@ -15,6 +15,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import android.util.Log
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 
 @Composable
 internal fun MeditationRoute(
@@ -239,7 +242,7 @@ fun MeditationScreen(
             ) {
                 MeditationCard(
                     title = "Extended Focus",
-                    duration = "38 min",
+                    duration = "30 min",
                     description = "Deep concentration practice for advanced practitioners",
                     icon = Icons.Default.CenterFocusStrong,
                     onClick = { onStartSession("extended_focus") },
@@ -484,12 +487,14 @@ private fun CustomMeditationDialog(
     onStartCustomSession: (String) -> Unit
 ) {
     var selectedDuration by remember { mutableStateOf(15) } // minutes
-    var selectedSteps by remember { mutableStateOf(5) }
     var meditationFocus by remember { mutableStateOf("") }
     var currentMood by remember { mutableStateOf("") }
     var experience by remember { mutableStateOf("") }
     var isGenerating by remember { mutableStateOf(false) }
     var generationProgress by remember { mutableStateOf("") }
+
+    // Auto-calculate steps based on duration
+    val calculatedSteps = calculateStepsForDuration(selectedDuration)
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -536,23 +541,15 @@ private fun CustomMeditationDialog(
 
                 item {
                     Text(
-                        "Number of Steps: $selectedSteps",
+                        "Steps: $calculatedSteps (auto-calculated)",
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Medium
                     )
-                    Slider(
-                        value = selectedSteps.toFloat(),
-                        onValueChange = { selectedSteps = it.toInt() },
-                        valueRange = 3f..8f,
-                        steps = 4
+                    Text(
+                        "Steps are automatically calculated based on duration for optimal pacing",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                     )
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text("3 steps", style = MaterialTheme.typography.labelSmall)
-                        Text("8 steps", style = MaterialTheme.typography.labelSmall)
-                    }
                 }
 
                 item {
@@ -643,10 +640,10 @@ private fun CustomMeditationDialog(
                 onClick = {
                     if (!isGenerating) {
                         isGenerating = true
-                        generateCustomMeditation(
+                        startSequentialCustomMeditation(
                             context = context,
                             duration = selectedDuration,
-                            steps = selectedSteps,
+                            steps = calculatedSteps,
                             focus = meditationFocus,
                             mood = currentMood,
                             experience = experience,
@@ -682,7 +679,8 @@ private fun CustomMeditationDialog(
     )
 }
 
-private fun generateCustomMeditation(
+// Start sequential custom meditation with just the first step
+private fun startSequentialCustomMeditation(
     context: android.content.Context,
     duration: Int,
     steps: Int,
@@ -694,209 +692,233 @@ private fun generateCustomMeditation(
     onError: () -> Unit
 ) {
     try {
-        onProgress("Initializing AI meditation generator...")
-        val inferenceModel = InferenceModel.getInstance(context)
-
+        onProgress("Creating your personalized meditation session...")
+        
+        val sessionId = "custom_ai_${System.currentTimeMillis()}"
         val stepDuration = (duration * 60) / steps
-
-        val prompt = buildSystemPrompt(duration, steps, stepDuration, focus, mood, experience)
-
-        val progressListener = object : com.google.mediapipe.tasks.genai.llminference.ProgressListener<String> {
-            private var currentStep = 1
-
-            override fun run(partialResult: String?, done: Boolean) {
-                if (partialResult?.contains("Step") == true || partialResult?.contains("title") == true) {
-                    onProgress("Creating step $currentStep of $steps...")
-                    currentStep++
-                }
-
-                if (done && partialResult != null) {
-                    onProgress("Finalizing meditation session...")
-                }
-            }
-        }
-
-        val responseFuture = inferenceModel.generateResponseAsync(prompt, progressListener)
-
-        responseFuture.addListener({
-            try {
-                val response = responseFuture.get()
-                Log.d("CustomMeditation", "AI Response: $response")
-
-                val sessionId = parseAndStoreCustomMeditation(context, response, duration, steps, stepDuration)
-                onComplete(sessionId)
-            } catch (e: Exception) {
-                Log.e("CustomMeditation", "Error generating meditation", e)
-                onError()
-            }
-        }, context.mainExecutor)
-
+        
+        // Store session configuration
+        val config = CustomMeditationConfig(
+            sessionId = sessionId,
+            totalDuration = duration,
+            totalSteps = steps,
+            stepDuration = stepDuration,
+            focus = focus,
+            mood = mood,
+            experience = experience
+        )
+        
+        storeCustomMeditationConfig(context, config)
+        
+        // Generate first step immediately
+        generateSingleMeditationStep(
+            context = context,
+            config = config,
+            stepIndex = 0,
+            onProgress = onProgress,
+            onComplete = { onComplete(sessionId) },
+            onError = onError
+        )
+        
     } catch (e: Exception) {
-        Log.e("CustomMeditation", "Error starting generation", e)
+        Log.e("CustomMeditation", "Error starting sequential meditation", e)
         onError()
     }
 }
 
-private fun buildSystemPrompt(
-    duration: Int,
-    steps: Int,
-    stepDuration: Int,
-    focus: String,
-    mood: String,
-    experience: String
-): String {
-    return """You are a meditation instructor creating a personalized ${duration}-minute meditation session.
-
-REQUIREMENTS:
-- Create exactly $steps meditation steps
-- Each step should be ${stepDuration} seconds (about ${stepDuration/60} minutes)
-- Each guidance should be 2-3 sentences maximum
-- Use calming, clear, and simple language
-- Focus: ${if (focus.isNotEmpty()) focus else "general relaxation"}
-- Current mood: ${if (mood.isNotEmpty()) mood else "neutral"}
-- Experience level: $experience
-
-FORMAT: Respond with ONLY this JSON structure, no other text:
-{
-  "steps": [
-    {
-      "title": "Step Name",
-      "description": "Brief description", 
-      "guidance": "2-3 sentences of meditation instruction.",
-      "durationSeconds": $stepDuration
-    }
-  ]
-}
-
-Create a meditation that flows naturally from beginning to end, starting with settling in and ending with integration."""
-}
-
-private fun parseAndStoreCustomMeditation(
+// Generate a single meditation step
+private fun generateSingleMeditationStep(
     context: android.content.Context,
-    aiResponse: String,
-    duration: Int,
-    steps: Int,
-    stepDuration: Int
-): String {
-    val sessionId = "custom_ai_${System.currentTimeMillis()}"
-
+    config: CustomMeditationConfig,
+    stepIndex: Int,
+    onProgress: (String) -> Unit,
+    onComplete: () -> Unit,
+    onError: () -> Unit
+) {
     try {
-        // Simple JSON extraction since we don't have a JSON library
-        val steps = parseSimpleJsonSteps(aiResponse, steps, stepDuration)
-
-        // Store the parsed steps
-        val prefs = context.getSharedPreferences("custom_meditations", android.content.Context.MODE_PRIVATE)
-        val editor = prefs.edit()
-
-        steps.forEachIndexed { index, step ->
-            editor.putString("${sessionId}_step_${index}_title", step.title)
-            editor.putString("${sessionId}_step_${index}_description", step.description)
-            editor.putString("${sessionId}_step_${index}_guidance", step.guidance)
-            editor.putInt("${sessionId}_step_${index}_duration", step.durationSeconds)
-        }
-
-        editor.putInt("${sessionId}_total_steps", steps.size)
-        editor.putInt("${sessionId}_duration", duration)
-        editor.apply()
-
-        Log.d("CustomMeditation", "Stored ${steps.size} steps for session $sessionId")
-        Log.d("CustomMeditation", "Session ID being returned: $sessionId")
-
-    } catch (e: Exception) {
-        Log.e("CustomMeditation", "Error parsing AI response, using fallback", e)
-        // Store fallback data
-        storeFallbackSession(context, sessionId, duration, steps, stepDuration)
-    }
-
-    return sessionId
-}
-
-private fun parseSimpleJsonSteps(response: String, expectedSteps: Int, stepDuration: Int): List<MeditationStep> {
-    val steps = mutableListOf<MeditationStep>()
-
-    try {
-        // Extract steps between "steps": [ and ]
-        val stepsSection = response.substringAfter("\"steps\":")
-            .substringAfter("[")
-            .substringBefore("]")
-
-        // Split by objects (rough parsing)
-        val stepObjects = stepsSection.split("},{").map { it.trim() }
-
-        stepObjects.forEach { stepData ->
+        onProgress("Generating step ${stepIndex + 1} of ${config.totalSteps}...")
+        
+        val inferenceModel = InferenceModel.getInstance(context)
+        val prompt = buildSingleStepPrompt(config, stepIndex)
+        
+        Log.d("CustomMeditation", "Generating step ${stepIndex + 1} with prompt: ${prompt.take(100)}...")
+        
+        // Use coroutines to generate the step (similar to QuickChat)
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).   launch {
             try {
-                val title = extractJsonValue(stepData, "title").ifEmpty { "Meditation Step" }
-                val description = extractJsonValue(stepData, "description").ifEmpty { "Mindful practice" }
-                val guidance = extractJsonValue(stepData, "guidance").ifEmpty { "Focus on your breath and be present." }
-
-                steps.add(MeditationStep(
-                    title = title,
-                    description = description,
-                    guidance = guidance,
-                    durationSeconds = stepDuration
-                ))
+                var fullResponse = ""
+                
+                val responseFuture = inferenceModel.generateResponseAsync(prompt) { partialResult, done ->
+                    if (partialResult != null) {
+                        fullResponse += partialResult
+                    }
+                    
+                    if (done) {
+                        try {
+                            Log.d("CustomMeditation", "Step ${stepIndex + 1} response: $fullResponse")
+                            
+                            // Parse and store the single step
+                            val step = parseSingleStepResponse(fullResponse, config.stepDuration, stepIndex)
+                            storeSingleMeditationStep(context, config.sessionId, step, stepIndex)
+                            
+                            // Switch back to main thread for callback
+                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                                onComplete()
+                            }
+                        } catch (e: Exception) {
+                            Log.e("CustomMeditation", "Error parsing step ${stepIndex + 1}", e)
+                            // Create fallback step
+                            val fallbackStep = createFallbackStep(stepIndex, config.stepDuration)
+                            storeSingleMeditationStep(context, config.sessionId, fallbackStep, stepIndex)
+                            
+                            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                                onComplete()
+                            }
+                        }
+                    }
+                }
+                
+                // Wait for completion
+                responseFuture.get()
+                
             } catch (e: Exception) {
-                Log.w("CustomMeditation", "Error parsing step: $stepData")
+                Log.e("CustomMeditation", "Error in inference for step ${stepIndex + 1}", e)
+                // Create fallback step and continue
+                val fallbackStep = createFallbackStep(stepIndex, config.stepDuration)
+                storeSingleMeditationStep(context, config.sessionId, fallbackStep, stepIndex)
+                
+                kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Main).launch {
+                    onComplete()
+                }
             }
         }
-
+        
     } catch (e: Exception) {
-        Log.e("CustomMeditation", "Error parsing JSON response", e)
-    }
-
-    // Fallback if parsing failed
-    if (steps.isEmpty()) {
-        return createFallbackSteps(expectedSteps, stepDuration)
-    }
-
-    return steps.take(expectedSteps)
-}
-
-private fun extractJsonValue(json: String, key: String): String {
-    return try {
-        json.substringAfter("\"$key\":")
-            .substringAfter("\"")
-            .substringBefore("\"")
-            .trim()
-    } catch (e: Exception) {
-        ""
+        Log.e("CustomMeditation", "Error generating step", e)
+        onError()
     }
 }
 
-private fun createFallbackSteps(stepCount: Int, stepDuration: Int): List<MeditationStep> {
-    val fallbackSteps = listOf(
-        MeditationStep("Welcome", "Beginning meditation", "Find a comfortable position and take three deep breaths. Allow yourself to settle into this moment.", stepDuration),
-        MeditationStep("Breath Focus", "Connecting with breath", "Turn your attention to your natural breathing. Notice each inhale and exhale without changing anything.", stepDuration),
-        MeditationStep("Body Awareness", "Scanning the body", "Slowly scan through your body from head to toe. Notice any sensations with gentle curiosity.", stepDuration),
-        MeditationStep("Mind Stillness", "Calming thoughts", "When thoughts arise, acknowledge them kindly and return to your breath. Rest in this peaceful awareness.", stepDuration),
-        MeditationStep("Heart Opening", "Cultivating compassion", "Send kindness to yourself and others. Feel your heart opening with warmth and compassion.", stepDuration),
-        MeditationStep("Integration", "Completing practice", "Take a moment to appreciate this time you've given yourself. Slowly return to your surroundings.", stepDuration),
-        MeditationStep("Peaceful Presence", "Resting in stillness", "Simply be present with whatever arises. There's nothing to fix or change, just peaceful being.", stepDuration),
-        MeditationStep("Gratitude", "Feeling thankful", "Reflect on something you're grateful for. Let this appreciation fill your heart with warmth.", stepDuration)
-    )
-
-    return fallbackSteps.take(stepCount)
-}
-
-private fun storeFallbackSession(
-    context: android.content.Context,
-    sessionId: String,
-    duration: Int,
-    stepCount: Int,
-    stepDuration: Int
-) {
-    val steps = createFallbackSteps(stepCount, stepDuration)
+// Store configuration for sequential generation
+private fun storeCustomMeditationConfig(context: android.content.Context, config: CustomMeditationConfig) {
     val prefs = context.getSharedPreferences("custom_meditations", android.content.Context.MODE_PRIVATE)
     val editor = prefs.edit()
-
-    steps.forEachIndexed { index, step ->
-        editor.putString("${sessionId}_step_${index}_title", step.title)
-        editor.putString("${sessionId}_step_${index}_description", step.description)
-        editor.putString("${sessionId}_step_${index}_guidance", step.guidance)
-        editor.putInt("${sessionId}_step_${index}_duration", step.durationSeconds)
-    }
-
-    editor.putInt("${sessionId}_total_steps", steps.size)
-    editor.putInt("${sessionId}_duration", duration)
+    
+    editor.putString("${config.sessionId}_focus", config.focus)
+    editor.putString("${config.sessionId}_mood", config.mood)
+    editor.putString("${config.sessionId}_experience", config.experience)
+    editor.putInt("${config.sessionId}_duration", config.totalDuration)
+    editor.putInt("${config.sessionId}_total_steps", config.totalSteps)
+    editor.putInt("${config.sessionId}_step_duration", config.stepDuration)
+    editor.putInt("${config.sessionId}_current_step", 0)
+    
     editor.apply()
+    Log.d("CustomMeditation", "Stored config for session ${config.sessionId}")
+}
+
+// Build prompt for a single meditation step  
+private fun buildSingleStepPrompt(config: CustomMeditationConfig, stepIndex: Int): String {
+    val stepType = when {
+        stepIndex == 0 -> "opening and settling"
+        stepIndex == config.totalSteps - 1 -> "closing and integration"
+        stepIndex == 1 -> "initial focus and grounding"
+        stepIndex == config.totalSteps - 2 -> "deepening and preparation for completion"
+        else -> "main practice"
+    }
+    
+    return """Create a ${stepType} meditation step (${stepIndex + 1} of ${config.totalSteps}) for a ${config.totalDuration}-minute meditation.
+
+CONTEXT:
+- Focus: ${config.focus.ifEmpty { "general relaxation" }}
+- Current mood: ${config.mood.ifEmpty { "neutral" }}
+- Experience level: ${config.experience}
+- Step duration: ${config.stepDuration} seconds
+
+Create a brief title and 2-3 sentences of warm, clear meditation guidance for this ${stepType} phase.
+
+Title: [Brief step name]
+Guidance: [2-3 sentences of meditation instruction]"""
+}
+
+// Parse single step response
+private fun parseSingleStepResponse(response: String, stepDuration: Int, stepIndex: Int): MeditationStep {
+    return try {
+        val lines = response.trim().split("\n")
+        var title = "Meditation Step ${stepIndex + 1}"
+        var guidance = "Focus on your breath and be present in this moment."
+        
+        for (line in lines) {
+            when {
+                line.startsWith("Title:", ignoreCase = true) -> {
+                    title = line.substringAfter(":").trim()
+                }
+                line.startsWith("Guidance:", ignoreCase = true) -> {
+                    guidance = line.substringAfter(":").trim()
+                }
+            }
+        }
+        
+        MeditationStep(
+            title = title,
+            description = "Custom meditation step",
+            guidance = guidance,
+            durationSeconds = stepDuration
+        )
+    } catch (e: Exception) {
+        Log.e("CustomMeditation", "Error parsing step response", e)
+        createFallbackStep(stepIndex, stepDuration)
+    }
+}
+
+// Create fallback step if generation fails
+private fun createFallbackStep(stepIndex: Int, stepDuration: Int): MeditationStep {
+    val fallbackSteps = listOf(
+        "Take three deep breaths and settle into your meditation space.",
+        "Notice your natural breathing rhythm and follow its gentle flow.",
+        "Observe any thoughts that arise and let them pass like clouds in the sky.",
+        "Feel the support of the ground beneath you and relax into this moment.",
+        "Bring your attention to the present moment with gentle awareness.",
+        "Take a moment to appreciate this time you've given yourself for peace.",
+        "Breathe deeply and prepare to carry this calm with you."
+    )
+    
+    val guidance = fallbackSteps.getOrNull(stepIndex) ?: fallbackSteps[0]
+    
+    return MeditationStep(
+        title = "Mindful Moment ${stepIndex + 1}",
+        description = "Guided meditation practice",
+        guidance = guidance,
+        durationSeconds = stepDuration
+    )
+}
+
+// Store single meditation step
+private fun storeSingleMeditationStep(
+    context: android.content.Context,
+    sessionId: String,
+    step: MeditationStep,
+    stepIndex: Int
+) {
+    val prefs = context.getSharedPreferences("custom_meditations", android.content.Context.MODE_PRIVATE)
+    val editor = prefs.edit()
+    
+    editor.putString("${sessionId}_step_${stepIndex}_title", step.title)
+    editor.putString("${sessionId}_step_${stepIndex}_description", step.description)
+    editor.putString("${sessionId}_step_${stepIndex}_guidance", step.guidance)
+    editor.putInt("${sessionId}_step_${stepIndex}_duration", step.durationSeconds)
+    
+    editor.apply()
+    Log.d("CustomMeditation", "Stored step $stepIndex: ${step.title}")
+}
+
+// Calculate optimal step count based on duration
+private fun calculateStepsForDuration(durationMinutes: Int): Int {
+    return when {
+        durationMinutes <= 5 -> 2    // Very short: 2 steps
+        durationMinutes <= 10 -> 3   // Short: 3 steps  
+        durationMinutes <= 15 -> 4   // Medium: 4 steps
+        durationMinutes <= 30 -> 5   // Long: 5 steps
+        durationMinutes <= 45 -> 6   // Very long: 6 steps
+        else -> 7                    // Extended: 7 steps max
+    }
 }
