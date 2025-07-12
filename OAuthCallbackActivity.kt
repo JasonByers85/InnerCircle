@@ -50,8 +50,9 @@ class OAuthCallbackActivity : Activity() {
 
             val licenseUrl = InferenceModel.model.licenseUrl
             if (licenseUrl.isEmpty()) {
+              // Go to loading screen to download the model after successful authentication
               val intent = Intent(this, MainActivity::class.java).apply {
-                putExtra("NAVIGATE_TO", "home")
+                putExtra("NAVIGATE_TO", "load_screen")
               }
               startActivity(intent)
             } else {

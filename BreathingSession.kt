@@ -52,6 +52,7 @@ fun BreathingSession(
     // Audio settings using same system as meditation
     var showSettingsDialog by remember { mutableStateOf(false) }
     val settings = remember { MeditationSettings.getInstance(context) }
+    val breathingSettings = remember { BreathingSettings.getInstance(context) }
     
     // Initialize Audio
     LaunchedEffect(Unit) {
@@ -67,7 +68,7 @@ fun BreathingSession(
         }
     }
     
-    // Audio settings management using meditation settings
+    // Audio settings management using meditation settings (setup only, don't start playing)
     LaunchedEffect(settings) {
         audioManager.setBackgroundSound(settings.getBackgroundSound())
         audioManager.setBackgroundVolume(settings.getVolume())
@@ -78,13 +79,19 @@ fun BreathingSession(
     // Breathing cycle logic
     LaunchedEffect(isActive, isAudioReady) {
         if (isActive && isAudioReady) {
+            // Start background audio when breathing session starts
+            audioManager.startAudio()
+            
             val totalCycleTime = program.inhaleSeconds + program.holdSeconds + program.exhaleSeconds
             var lastSpokenPhase = ""
             
             while (isActive && timeRemaining > 0) {
-                delay(1000) // Update every 1 second for timer
-                currentCycleTime += 1000
-                timeRemaining = (timeRemaining - 1).coerceAtLeast(0)
+                delay(500) // Update every 500ms for smoother but efficient animation
+                currentCycleTime += 500
+                // Update timeRemaining only every second to reduce state changes
+                if (currentCycleTime % 1000 == 0) {
+                    timeRemaining = (timeRemaining - 1).coerceAtLeast(0)
+                }
                 
                 val cyclePosition = (currentCycleTime / 1000) % totalCycleTime
                 
@@ -98,7 +105,7 @@ fun BreathingSession(
                             }
                         }
                         phaseProgress = (cyclePosition / program.inhaleSeconds.toFloat()).coerceIn(0f, 1f)
-                        phaseCountdown = (program.inhaleSeconds - cyclePosition).coerceAtLeast(1)
+                        phaseCountdown = (program.inhaleSeconds - cyclePosition).coerceAtLeast(0)
                     }
                     cyclePosition < program.inhaleSeconds + program.holdSeconds -> {
                         if (currentPhase != "Hold") {
@@ -110,7 +117,7 @@ fun BreathingSession(
                         }
                         phaseProgress = 1f
                         val holdPosition = cyclePosition - program.inhaleSeconds
-                        phaseCountdown = (program.holdSeconds - holdPosition).coerceAtLeast(1)
+                        phaseCountdown = (program.holdSeconds - holdPosition).coerceAtLeast(0)
                     }
                     else -> {
                         if (currentPhase != "Breathe Out") {
@@ -123,7 +130,7 @@ fun BreathingSession(
                         val exhaleProgress = (cyclePosition - program.inhaleSeconds - program.holdSeconds) / program.exhaleSeconds.toFloat()
                         phaseProgress = (1f - exhaleProgress).coerceIn(0f, 1f)
                         val exhalePosition = cyclePosition - program.inhaleSeconds - program.holdSeconds
-                        phaseCountdown = (program.exhaleSeconds - exhalePosition).coerceAtLeast(1)
+                        phaseCountdown = (program.exhaleSeconds - exhalePosition).coerceAtLeast(0)
                     }
                 }
             }
@@ -133,6 +140,12 @@ fun BreathingSession(
                 currentPhase = "Complete!"
                 audioManager.speak("Breathing session complete. Well done!")
             }
+            
+            // Stop audio when session ends or is paused
+            audioManager.stopAudio()
+        } else if (!isActive) {
+            // Stop audio when session is paused/stopped
+            audioManager.stopAudio()
         }
     }
     
@@ -162,11 +175,66 @@ fun BreathingSession(
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                 )
             }
-            IconButton(onClick = { showSettingsDialog = true }) {
-                Icon(Icons.Default.Settings, contentDescription = "Audio Settings")
-            }
             IconButton(onClick = onExit) {
                 Icon(Icons.Default.Close, contentDescription = "Exit")
+            }
+        }
+        
+        // Audio control bar (like meditation session)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.End,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // TTS toggle
+            IconButton(onClick = {
+                val newEnabled = !breathingSettings.isTtsEnabled()
+                breathingSettings.setTtsEnabled(newEnabled)
+            }) {
+                Icon(
+                    if (breathingSettings.isTtsEnabled()) Icons.Default.RecordVoiceOver else Icons.Default.VoiceOverOff,
+                    contentDescription = if (breathingSettings.isTtsEnabled()) "Disable Voice" else "Enable Voice",
+                    tint = if (breathingSettings.isTtsEnabled()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // Background sound toggle
+            IconButton(onClick = {
+                val newEnabled = !breathingSettings.isSoundEnabled()
+                breathingSettings.setSoundEnabled(newEnabled)
+                audioManager.updateBackgroundAudio()
+            }) {
+                Icon(
+                    if (breathingSettings.isSoundEnabled()) Icons.Default.MusicNote else Icons.Default.MusicOff,
+                    contentDescription = if (breathingSettings.isSoundEnabled()) "Disable Background Sound" else "Enable Background Sound",
+                    tint = if (breathingSettings.isSoundEnabled()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // Binaural tone toggle
+            IconButton(onClick = {
+                val newEnabled = !breathingSettings.isBinauralEnabled()
+                breathingSettings.setBinauralEnabled(newEnabled)
+                audioManager.updateBinauralAudio()
+            }) {
+                Icon(
+                    Icons.Default.GraphicEq,
+                    contentDescription = if (breathingSettings.isBinauralEnabled()) "Disable Binaural" else "Enable Binaural",
+                    tint = if (breathingSettings.isBinauralEnabled()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
+                    modifier = Modifier.size(24.dp)
+                )
+            }
+
+            // Settings dialog
+            IconButton(onClick = { showSettingsDialog = true }) {
+                Icon(
+                    Icons.Default.Settings,
+                    contentDescription = "Audio Settings",
+                    tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                    modifier = Modifier.size(24.dp)
+                )
             }
         }
         
@@ -201,50 +269,12 @@ fun BreathingSession(
             }
         }
         
-        // Audio Settings Dialog (same as meditation)
+        // Breathing Settings Dialog (separate from meditation)
         if (showSettingsDialog) {
-            UnifiedMeditationSettingsDialog(
-                settings = settings,
+            BreathingSettingsDialog(
+                breathingSettings = breathingSettings,
                 context = context,
-                soundEnabled = true,
-                onSoundToggle = { /* Settings handles this */ },
-                backgroundSound = settings.getBackgroundSound(),
-                onBackgroundSoundChange = { sound -> 
-                    settings.setBackgroundSound(sound)
-                    audioManager.setBackgroundSound(sound)
-                },
-                binauralEnabled = settings.isBinauralEnabled(),
-                onBinauralToggle = {
-                    val newEnabled = !settings.isBinauralEnabled()
-                    settings.setBinauralEnabled(newEnabled)
-                    if (!newEnabled) audioManager.setBinauralTone(BinauralTone.NONE)
-                },
-                binauralTone = settings.getBinauralTone(),
-                onBinauralToneChange = { tone ->
-                    settings.setBinauralTone(tone)
-                    audioManager.setBinauralTone(tone)
-                },
-                ttsEnabled = settings.isTtsEnabled(),
-                onTtsToggle = {
-                    val newEnabled = !settings.isTtsEnabled()
-                    settings.setTtsEnabled(newEnabled)
-                },
-                onTtsSpeedChange = { speed ->
-                    settings.setTtsSpeed(speed)
-                    audioManager.updateTtsSettings()
-                },
-                onTtsPitchChange = { pitch ->
-                    settings.setTtsPitch(pitch)
-                    audioManager.updateTtsSettings()
-                },
-                onTtsVolumeChange = { volume ->
-                    settings.setTtsVolume(volume)
-                    audioManager.updateTtsSettings()
-                },
-                onTtsVoiceChange = { voice ->
-                    settings.setTtsVoice(voice)
-                    audioManager.updateTtsSettings()
-                },
+                audioManager = audioManager,
                 onDismiss = { showSettingsDialog = false }
             )
         }
@@ -267,7 +297,8 @@ fun BreathingSession(
                     isActive = isActive,
                     phase = currentPhase,
                     progress = phaseProgress,
-                    countdown = phaseCountdown
+                    countdown = phaseCountdown,
+                    showParticles = !showSettingsDialog // Disable particles when settings open
                 )
                 
                 Column(
@@ -336,6 +367,7 @@ fun BreathingSession(
                     currentCycleTime = 0
                     phaseProgress = 0f
                     phaseCountdown = 0
+                    audioManager.stopAudio()
                 },
                 modifier = Modifier.weight(1f)
             ) {
@@ -358,11 +390,12 @@ fun EnhancedBreathingCircle(
     isActive: Boolean,
     phase: String,
     progress: Float,
-    countdown: Int = 0
+    countdown: Int = 0,
+    showParticles: Boolean = true
 ) {
     val animatedProgress by animateFloatAsState(
         targetValue = if (isActive) progress else 0.5f,
-        animationSpec = tween(durationMillis = 200, easing = EaseInOutCubic),
+        animationSpec = tween(durationMillis = 300, easing = LinearEasing), // Simplified easing
         label = "breathing_progress"
     )
     
@@ -393,8 +426,8 @@ fun EnhancedBreathingCircle(
             else -> Color.Gray to Color.Gray.copy(alpha = 0.2f)
         }
         
-        // Draw energy particles for enhanced visual effect
-        if (isActive) {
+        // Draw energy particles for enhanced visual effect (only if enabled)
+        if (isActive && showParticles) {
             drawEnergyParticles(
                 center = center,
                 radius = currentRadius,
@@ -405,13 +438,12 @@ fun EnhancedBreathingCircle(
             )
         }
         
-        // Draw main breathing circle with gradient
+        // Draw main breathing circle with simplified gradient
         drawCircle(
             brush = Brush.radialGradient(
                 colors = listOf(
-                    primaryColor.copy(alpha = 0.6f),
-                    secondaryColor,
-                    primaryColor.copy(alpha = 0.1f)
+                    primaryColor.copy(alpha = 0.5f),
+                    primaryColor.copy(alpha = 0.2f)
                 ),
                 center = center,
                 radius = currentRadius
@@ -428,40 +460,33 @@ fun EnhancedBreathingCircle(
             style = androidx.compose.ui.graphics.drawscope.Stroke(width = 3.dp.toPx())
         )
         
-        // Draw inner core
+        // Draw simplified inner core
         drawCircle(
-            brush = Brush.radialGradient(
-                colors = listOf(
-                    primaryColor.copy(alpha = 0.8f),
-                    primaryColor.copy(alpha = 0.2f)
-                ),
-                center = center,
-                radius = currentRadius * 0.3f
-            ),
+            color = primaryColor.copy(alpha = 0.6f),
             radius = currentRadius * 0.3f,
             center = center
         )
     }
         
-        // Countdown display overlay
+        // Simplified countdown display overlay
         if (isActive && countdown > 0) {
             Text(
                 text = countdown.toString(),
-                style = MaterialTheme.typography.headlineLarge,
+                style = MaterialTheme.typography.headlineMedium, // Smaller to reduce rendering
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 modifier = Modifier
                     .background(
-                        color = Color.Black.copy(alpha = 0.6f),
+                        color = Color.Black.copy(alpha = 0.5f), // Lighter for less processing
                         shape = CircleShape
                     )
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
             )
         }
     }
 }
 
-// Energy particles visualization
+// Simplified energy particles visualization
 fun DrawScope.drawEnergyParticles(
     center: Offset,
     radius: Float,
@@ -470,16 +495,16 @@ fun DrawScope.drawEnergyParticles(
     positiveColor: Color,
     negativeColor: Color
 ) {
-    val particleCount = 12
-    val particleRadius = 4.dp.toPx()
+    // Reduced particle count for better performance
+    val particleCount = 6
+    val particleRadius = 3.dp.toPx()
+    
+    // Only show particles during active phases to reduce rendering
+    if (phase == "Ready" || phase == "Complete!") return
     
     for (i in 0 until particleCount) {
         val angle = (i * 2 * PI / particleCount).toFloat()
-        val particleDistance = when (phase) {
-            "Breathe In" -> radius * 0.6f + (radius * 0.4f * progress)
-            "Breathe Out" -> radius * 1.2f - (radius * 0.4f * (1f - progress))
-            else -> radius * 0.8f
-        }
+        val particleDistance = radius * (0.7f + 0.3f * progress)
         
         val particleCenter = Offset(
             center.x + cos(angle) * particleDistance,
@@ -487,9 +512,9 @@ fun DrawScope.drawEnergyParticles(
         )
         
         val particleColor = when (phase) {
-            "Breathe In" -> positiveColor.copy(alpha = 0.7f)
-            "Breathe Out" -> negativeColor.copy(alpha = 0.7f)
-            else -> Color.Gray.copy(alpha = 0.3f)
+            "Breathe In" -> positiveColor.copy(alpha = 0.6f)
+            "Breathe Out" -> negativeColor.copy(alpha = 0.6f)
+            else -> positiveColor.copy(alpha = 0.4f)
         }
         
         drawCircle(

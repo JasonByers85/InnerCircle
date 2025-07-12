@@ -78,7 +78,7 @@ class MoodTrackerViewModel(
 
                 val moodSummary = analyzeMoodHistory(history)
 
-                val systemPrompt = """You are a supportive wellness AI analyzing mood patterns. Provide encouraging, actionable insights based on the user's mood history.
+                val systemPrompt = """You are AuriZen, a supportive wellness AI within an app that provides meditations and breathing exercises. Analyze mood patterns and provide encouraging, actionable insights. When offering guidance, suggest using the meditation and breathing tools within this app.
 
 Mood Analysis Data:
 $moodSummary
@@ -86,7 +86,7 @@ $moodSummary
 Provide insights in EXACTLY 4-5 short paragraphs (2-3 sentences each). Keep it concise and focused:
 1. Brief observation about their mood patterns
 2. Positive highlights and progress
-3. 2-3 practical suggestions for wellness
+3. 2-3 practical suggestions for wellness (mention app's meditations/breathing exercises when relevant)
 4. Gentle encouragement for challenges
 5. Motivational closing (optional)
 

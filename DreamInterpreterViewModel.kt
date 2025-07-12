@@ -27,6 +27,9 @@ class DreamInterpreterViewModel(
 
     private val _dreamHistory = MutableStateFlow<List<DreamEntry>>(emptyList())
     val dreamHistory: StateFlow<List<DreamEntry>> = _dreamHistory.asStateFlow()
+    
+    private val _selectedTab = MutableStateFlow(0) // 0 = Interpreter, 1 = Diary
+    val selectedTab: StateFlow<Int> = _selectedTab.asStateFlow()
 
     private val dreamStorage = DreamStorage.getInstance(context)
     private val userProfile = UserProfile.getInstance(context)
@@ -118,10 +121,14 @@ Dreams often reflect our daily experiences, emotions, and subconscious thoughts.
 
     private fun saveDreamEntry(description: String, interpretation: String) {
         viewModelScope.launch(Dispatchers.IO) {
+            // Generate brief summary for diary view
+            val summary = generateDreamSummary(description, interpretation)
+            
             val dreamEntry = DreamEntry(
                 description = description,
                 interpretation = interpretation,
-                timestamp = System.currentTimeMillis()
+                timestamp = System.currentTimeMillis(),
+                summary = summary
             )
 
             dreamStorage.saveDreamEntry(dreamEntry)
@@ -133,6 +140,59 @@ Dreams often reflect our daily experiences, emotions, and subconscious thoughts.
             // Reload history
             loadDreamHistory()
         }
+    }
+    
+    private suspend fun generateDreamSummary(description: String, interpretation: String): String {
+        return try {
+            val summaryPrompt = """Based on this dream and its interpretation, provide a single brief sentence (maximum 15 words) that captures the core subconscious meaning or theme. Be precise and insightful.
+
+Dream: "$description"
+Interpretation: "${interpretation.take(500)}..."
+
+Respond with only the summary sentence, nothing else."""
+
+            var summary = ""
+            val responseJob = inferenceModel.generateResponseAsync(summaryPrompt) { partialResult, done ->
+                summary += partialResult
+                if (done) {
+                    summary = summary.trim().take(100) // Ensure it's brief
+                }
+            }
+            responseJob.get()
+            
+            if (summary.isBlank()) {
+                // Fallback summary based on description
+                "A dream about ${description.take(30).lowercase()}${if (description.length > 30) "..." else ""}"
+            } else {
+                summary
+            }
+        } catch (e: Exception) {
+            // Fallback summary
+            "A dream about ${description.take(30).lowercase()}${if (description.length > 30) "..." else ""}"
+        }
+    }
+
+    fun deleteDreamEntry(dreamEntry: DreamEntry) {
+        viewModelScope.launch(Dispatchers.IO) {
+            dreamStorage.deleteDreamEntry(dreamEntry)
+            loadDreamHistory()
+        }
+    }
+    
+    fun regenerateInterpretation(dreamEntry: DreamEntry) {
+        // Delete the old entry and reinterpret
+        viewModelScope.launch(Dispatchers.IO) {
+            dreamStorage.deleteDreamEntry(dreamEntry)
+            loadDreamHistory()
+            
+            // Switch back to main interpretation view and start new interpretation
+            _interpretation.value = ""
+            interpretDream(dreamEntry.description)
+        }
+    }
+    
+    fun setSelectedTab(tabIndex: Int) {
+        _selectedTab.value = tabIndex
     }
 
     companion object {

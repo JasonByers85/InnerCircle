@@ -182,19 +182,20 @@ class BreathingAudioManager(private val context: Context) {
     private var tts: TextToSpeech? = null
     private var isInitialized = false
     private val meditationAudioManager = MeditationAudioManager(context)
-    private val settings = MeditationSettings.getInstance(context)
+    private val breathingSettings = BreathingSettings.getInstance(context)
+    private val meditationSettings = MeditationSettings.getInstance(context)
     
     fun initialize(onInitialized: () -> Unit) {
         tts = TextToSpeech(context) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.let { tts ->
                     tts.language = Locale.getDefault()
-                    // Apply settings from MeditationSettings
-                    tts.setSpeechRate(settings.getTtsSpeed())
-                    tts.setPitch(settings.getTtsPitch())
+                    // Apply settings from BreathingSettings
+                    tts.setSpeechRate(breathingSettings.getTtsSpeed())
+                    tts.setPitch(breathingSettings.getTtsPitch())
                     
                     // Apply saved voice if available
-                    val savedVoice = settings.getTtsVoice()
+                    val savedVoice = breathingSettings.getTtsVoice()
                     if (savedVoice.isNotEmpty()) {
                         tts.voices?.find { it.name == savedVoice }?.let { voice ->
                             tts.voice = voice
@@ -202,22 +203,35 @@ class BreathingAudioManager(private val context: Context) {
                     }
                 }
                 isInitialized = true
+                
+                // Initialize audio volumes
+                meditationAudioManager.setVolume(breathingSettings.getVolume())
+                meditationAudioManager.setBinauralVolume(breathingSettings.getBinauralVolume())
+                
                 onInitialized()
             }
         }
     }
     
     fun speak(text: String) {
-        // Check if TTS is enabled in settings before speaking
-        if (isInitialized && settings.isTtsEnabled()) {
+        // Check if TTS is enabled in breathing settings before speaking
+        if (isInitialized && breathingSettings.isTtsEnabled()) {
             tts?.let { tts ->
                 // Apply current settings each time
-                tts.setSpeechRate(settings.getTtsSpeed())
-                tts.setPitch(settings.getTtsPitch())
+                tts.setSpeechRate(breathingSettings.getTtsSpeed())
+                tts.setPitch(breathingSettings.getTtsPitch())
+                
+                // Apply voice setting
+                val savedVoice = breathingSettings.getTtsVoice()
+                if (savedVoice.isNotEmpty()) {
+                    tts.voices?.find { it.name == savedVoice }?.let { voice ->
+                        tts.voice = voice
+                    }
+                }
                 
                 // Create bundle with volume parameter
                 val params = android.os.Bundle().apply {
-                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, settings.getTtsVolume())
+                    putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, breathingSettings.getTtsVolume())
                 }
                 
                 tts.speak(text, TextToSpeech.QUEUE_FLUSH, params, null)
@@ -227,11 +241,11 @@ class BreathingAudioManager(private val context: Context) {
     
     fun updateTtsSettings() {
         tts?.let { tts ->
-            tts.setSpeechRate(settings.getTtsSpeed())
-            tts.setPitch(settings.getTtsPitch())
+            tts.setSpeechRate(breathingSettings.getTtsSpeed())
+            tts.setPitch(breathingSettings.getTtsPitch())
             
             // Update voice if changed
-            val savedVoice = settings.getTtsVoice()
+            val savedVoice = breathingSettings.getTtsVoice()
             if (savedVoice.isNotEmpty()) {
                 tts.voices?.find { it.name == savedVoice }?.let { voice ->
                     tts.voice = voice
@@ -240,12 +254,24 @@ class BreathingAudioManager(private val context: Context) {
         }
     }
     
+    private var currentBackgroundSound = breathingSettings.getBackgroundSound()
+    private var currentBinauralTone = breathingSettings.getBinauralTone()
+    private var isAudioPlaying = false
+    
     fun setBackgroundSound(sound: BackgroundSound) {
-        meditationAudioManager.playBackgroundSound(sound)
+        currentBackgroundSound = sound
+        // Only play if audio is currently active
+        if (isAudioPlaying && sound != BackgroundSound.NONE) {
+            meditationAudioManager.playBackgroundSound(sound)
+        }
     }
     
     fun setBinauralTone(tone: BinauralTone) {
-        meditationAudioManager.playBinauralTone(tone)
+        currentBinauralTone = tone
+        // Only play if audio is currently active
+        if (isAudioPlaying && tone != BinauralTone.NONE) {
+            meditationAudioManager.playBinauralTone(tone)
+        }
     }
     
     fun setBackgroundVolume(volume: Float) {
@@ -256,9 +282,46 @@ class BreathingAudioManager(private val context: Context) {
         meditationAudioManager.setBinauralVolume(volume)
     }
     
+    fun startAudio() {
+        isAudioPlaying = true
+        // Only play if settings are enabled
+        if (breathingSettings.isSoundEnabled() && currentBackgroundSound != BackgroundSound.NONE) {
+            meditationAudioManager.playBackgroundSound(currentBackgroundSound)
+        }
+        if (breathingSettings.isBinauralEnabled() && currentBinauralTone != BinauralTone.NONE) {
+            meditationAudioManager.playBinauralTone(currentBinauralTone)
+        }
+    }
+    
     fun stopAudio() {
+        isAudioPlaying = false
         meditationAudioManager.stopBackgroundSound()
         meditationAudioManager.stopBinauralTone()
+    }
+    
+    fun updateBackgroundAudio() {
+        if (isAudioPlaying) {
+            if (breathingSettings.isSoundEnabled() && currentBackgroundSound != BackgroundSound.NONE) {
+                meditationAudioManager.playBackgroundSound(currentBackgroundSound)
+            } else {
+                meditationAudioManager.stopBackgroundSound()
+            }
+        }
+    }
+    
+    fun updateBinauralAudio() {
+        if (isAudioPlaying) {
+            if (breathingSettings.isBinauralEnabled() && currentBinauralTone != BinauralTone.NONE) {
+                meditationAudioManager.playBinauralTone(currentBinauralTone)
+            } else {
+                meditationAudioManager.stopBinauralTone()
+            }
+        }
+    }
+    
+    // Expose the internal meditation audio manager for settings dialog
+    fun getMeditationAudioManager(): MeditationAudioManager {
+        return meditationAudioManager
     }
     
     fun destroy() {
@@ -281,10 +344,10 @@ internal fun BreathingRoute(onBack: () -> Unit) {
             onProgramSelected = { selectedProgram = it }
         )
     } else {
-        BreathingSession(
+        UnifiedBreathingSessionRoute(
             program = selectedProgram!!,
             onBack = { selectedProgram = null },
-            onExit = onBack
+            onComplete = onBack
         )
     }
 }

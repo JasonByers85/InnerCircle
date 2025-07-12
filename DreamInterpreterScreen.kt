@@ -1,6 +1,8 @@
 package com.google.mediapipe.examples.llminference
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -16,6 +18,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.res.painterResource
@@ -32,13 +35,18 @@ internal fun DreamInterpreterRoute(
     val interpretation by viewModel.interpretation.collectAsStateWithLifecycle()
     val isInputEnabled by viewModel.isInputEnabled.collectAsStateWithLifecycle()
     val dreamHistory by viewModel.dreamHistory.collectAsStateWithLifecycle()
+    val selectedTab by viewModel.selectedTab.collectAsStateWithLifecycle()
 
     DreamInterpreterScreen(
         isLoading = isLoading,
         interpretation = interpretation,
         isInputEnabled = isInputEnabled,
         dreamHistory = dreamHistory,
+        selectedTab = selectedTab,
         onInterpretDream = viewModel::interpretDream,
+        onDreamDeleted = viewModel::deleteDreamEntry,
+        onRegenerateInterpretation = viewModel::regenerateInterpretation,
+        onTabSelected = viewModel::setSelectedTab,
         onBack = onBack
     )
 }
@@ -49,7 +57,11 @@ fun DreamInterpreterScreen(
     interpretation: String,
     isInputEnabled: Boolean,
     dreamHistory: List<DreamEntry>,
+    selectedTab: Int,
     onInterpretDream: (String) -> Unit,
+    onDreamDeleted: (DreamEntry) -> Unit,
+    onRegenerateInterpretation: (DreamEntry) -> Unit,
+    onTabSelected: (Int) -> Unit,
     onBack: () -> Unit
 ) {
     var dreamDescription by remember { mutableStateOf("") }
@@ -95,6 +107,60 @@ fun DreamInterpreterScreen(
             }
         }
 
+        // Tab row
+        TabRow(selectedTabIndex = selectedTab) {
+            Tab(
+                selected = selectedTab == 0,
+                onClick = { onTabSelected(0) },
+                text = { Text("Interpreter") }
+            )
+            Tab(
+                selected = selectedTab == 1,
+                onClick = { onTabSelected(1) },
+                text = { Text("Dream Diary") }
+            )
+        }
+
+        // Tab content
+        Box(modifier = Modifier.weight(1f)) {
+            when (selectedTab) {
+                0 -> DreamInterpreterTab(
+                    isLoading = isLoading,
+                    interpretation = interpretation,
+                    isInputEnabled = isInputEnabled,
+                    dreamHistory = dreamHistory,
+                    onInterpretDream = onInterpretDream,
+                    onDreamDeleted = onDreamDeleted,
+                    scrollState = scrollState,
+                    dreamDescription = dreamDescription,
+                    onDreamDescriptionChange = { dreamDescription = it }
+                )
+                1 -> DreamDiaryTab(
+                    dreamHistory = dreamHistory,
+                    onDreamDeleted = onDreamDeleted,
+                    onRegenerateInterpretation = onRegenerateInterpretation,
+                    onTabSelected = onTabSelected
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DreamInterpreterTab(
+    isLoading: Boolean,
+    interpretation: String,
+    isInputEnabled: Boolean,
+    dreamHistory: List<DreamEntry>,
+    onInterpretDream: (String) -> Unit,
+    onDreamDeleted: (DreamEntry) -> Unit,
+    scrollState: androidx.compose.foundation.ScrollState,
+    dreamDescription: String,
+    onDreamDescriptionChange: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier.fillMaxSize()
+    ) {
         // Scrollable content area
         Column(
             modifier = Modifier
@@ -103,44 +169,52 @@ fun DreamInterpreterScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Info card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.7f)
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(16.dp)
-                ) {
-                    Text(
-                        text = "🌙 Explore Your Dreams",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
 
-                    Spacer(modifier = Modifier.height(8.dp))
-
-                    Text(
-                        text = "Dreams often reflect our subconscious thoughts, emotions, and experiences. Share your dream and discover potential meanings and insights.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-            }
-
-            // Dream examples (only show when not loading and no interpretation)
+            // Dream interpretation guidance (only show when not loading and no interpretation)
             if (!isLoading && interpretation.isEmpty()) {
-                DreamExampleButtons { example ->
-                    dreamDescription = example
-                }
-            }
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                ) {
+                    Column(
+                        modifier = Modifier.padding(20.dp)
+                    ) {
+                        Text(
+                            text = "💭 Understanding Your Dreams",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
 
-            // Recent dreams section
-            if (dreamHistory.isNotEmpty() && !isLoading && interpretation.isEmpty()) {
-                RecentDreamsSection(dreamHistory) { dreamText ->
-                    dreamDescription = dreamText
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Dreams are windows into your subconscious mind, revealing hidden thoughts, emotions, and desires that influence your waking life. Through symbols, metaphors, and narratives, your mind processes experiences, fears, hopes, and unresolved conflicts.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Each dream element carries potential meaning - from people and places to emotions and actions. By exploring these connections, you can gain insights into your psychological state, relationships, personal growth, and inner wisdom.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            lineHeight = 20.sp
+                        )
+
+                        Spacer(modifier = Modifier.height(12.dp))
+
+                        Text(
+                            text = "Share your dream in detail below, and let's explore what your subconscious might be communicating to you.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                    }
                 }
             }
 
@@ -178,7 +252,7 @@ fun DreamInterpreterScreen(
                         }
                         else -> {
                             Text(
-                                text = "Share your dream and I'll help you explore its possible meanings, symbolism, and connections to your waking life.",
+                                text = "Your dream interpretation will appear here...",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
                                 modifier = Modifier.align(Alignment.Center),
@@ -211,7 +285,7 @@ fun DreamInterpreterScreen(
                 ) {
                     TextField(
                         value = dreamDescription,
-                        onValueChange = { dreamDescription = it },
+                        onValueChange = onDreamDescriptionChange,
                         label = { Text("Describe your dream") },
                         placeholder = { Text("Tell me about your dream in as much detail as you remember...") },
                         modifier = Modifier.fillMaxWidth(),
@@ -234,7 +308,7 @@ fun DreamInterpreterScreen(
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         OutlinedButton(
-                            onClick = { dreamDescription = "" },
+                            onClick = { onDreamDescriptionChange("") },
                             modifier = Modifier.weight(1f),
                             enabled = dreamDescription.isNotEmpty()
                         ) {
@@ -245,7 +319,7 @@ fun DreamInterpreterScreen(
                             onClick = {
                                 if (dreamDescription.isNotBlank()) {
                                     onInterpretDream(dreamDescription)
-                                    dreamDescription = ""
+                                    onDreamDescriptionChange("")
                                 }
                             },
                             modifier = Modifier.weight(2f),
@@ -266,91 +340,179 @@ fun DreamInterpreterScreen(
     }
 }
 
+
 @Composable
-private fun DreamExampleButtons(onExampleSelected: (String) -> Unit) {
+private fun DreamDiaryTab(
+    dreamHistory: List<DreamEntry>,
+    onDreamDeleted: (DreamEntry) -> Unit,
+    onRegenerateInterpretation: (DreamEntry) -> Unit,
+    onTabSelected: (Int) -> Unit
+) {
     Column(
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
     ) {
-        Text(
-            text = "Need inspiration? Try these common dream scenarios:",
-            style = MaterialTheme.typography.labelMedium,
-            fontWeight = FontWeight.SemiBold
-        )
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = { onExampleSelected("I was flying over a beautiful landscape, feeling completely free and peaceful.") },
-                modifier = Modifier.weight(1f)
+        if (dreamHistory.isEmpty()) {
+            // Empty state
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                colors = CardDefaults.cardColors(
+                    containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                )
             ) {
-                Text("Flying Dream", style = MaterialTheme.typography.labelSmall)
+                Column(
+                    modifier = Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "📔 Your Dream Diary",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Your interpreted dreams will appear here. Start by interpreting your first dream!",
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Button(onClick = { onTabSelected(0) }) {
+                        Text("Interpret a Dream")
+                    }
+                }
             }
-
-            OutlinedButton(
-                onClick = { onExampleSelected("I was being chased by someone I couldn't see, running through endless hallways.") },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Being Chased", style = MaterialTheme.typography.labelSmall)
+        } else {
+            // Dream diary entries
+            Text(
+                text = "📔 Dream Diary",
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            // Group dreams by month/year
+            val groupedDreams = dreamHistory.groupBy { dream ->
+                try {
+                    val date = if (dream.timestamp > 0) java.util.Date(dream.timestamp) else java.util.Date()
+                    val formatter = java.text.SimpleDateFormat("MMMM yyyy", java.util.Locale.getDefault())
+                    formatter.format(date) ?: "Unknown Date"
+                } catch (e: Exception) {
+                    "Unknown Date"
+                }
             }
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            OutlinedButton(
-                onClick = { onExampleSelected("I found myself in my childhood home, but everything was different and I felt lost.") },
-                modifier = Modifier.weight(1f)
+            
+            LazyColumn(
+                verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Lost in Familiar Place", style = MaterialTheme.typography.labelSmall)
-            }
-
-            OutlinedButton(
-                onClick = { onExampleSelected("I was talking to someone who passed away, and they gave me important advice.") },
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Deceased Person", style = MaterialTheme.typography.labelSmall)
+                for ((monthYear, dreams) in groupedDreams) {
+                    item {
+                        // Month/year header
+                        Text(
+                            text = monthYear,
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(vertical = 8.dp)
+                        )
+                    }
+                    
+                    items(dreams) { dream ->
+                        DreamDiaryCard(
+                            dream = dream,
+                            onDreamDeleted = onDreamDeleted,
+                            onRegenerateInterpretation = onRegenerateInterpretation,
+                            onTabSelected = onTabSelected
+                        )
+                    }
+                }
             }
         }
     }
 }
 
 @Composable
-private fun RecentDreamsSection(
-    dreamHistory: List<DreamEntry>,
-    onDreamSelected: (String) -> Unit
+private fun DreamDiaryCard(
+    dream: DreamEntry,
+    onDreamDeleted: (DreamEntry) -> Unit,
+    onRegenerateInterpretation: (DreamEntry) -> Unit,
+    onTabSelected: (Int) -> Unit
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-        )
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
         ) {
+            // Date
+            val dateText = try {
+                val date = if (dream.timestamp > 0) java.util.Date(dream.timestamp) else java.util.Date()
+                val dateFormatter = java.text.SimpleDateFormat("MMM dd, yyyy", java.util.Locale.getDefault())
+                dateFormatter.format(date) ?: "Unknown Date"
+            } catch (e: Exception) {
+                "Unknown Date"
+            }
             Text(
-                text = "Recent Dreams",
-                style = MaterialTheme.typography.titleSmall,
-                fontWeight = FontWeight.SemiBold
+                text = dateText,
+                style = MaterialTheme.typography.labelMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
             )
-
+            
             Spacer(modifier = Modifier.height(8.dp))
-
-            dreamHistory.takeLast(3).forEach { dream ->
+            
+            // Original dream description
+            val dreamDescription = try {
+                val desc = dream.description ?: ""
+                if (desc.length > 150) desc.take(150) + "..." else desc
+            } catch (e: Exception) {
+                "Dream entry"
+            }
+            Text(
+                text = dreamDescription,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium
+            )
+            
+            // AI summary (if available)
+            if (dream.summary.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "Summary: ${dream.summary}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(12.dp))
+            
+            // Action buttons
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
                 OutlinedButton(
-                    onClick = { onDreamSelected(dream.description) },
-                    modifier = Modifier.fillMaxWidth()
+                    onClick = { 
+                        onRegenerateInterpretation(dream)
+                        onTabSelected(0) // Switch back to interpreter tab
+                    },
+                    modifier = Modifier.weight(1f)
                 ) {
-                    Text(
-                        text = dream.description.take(60) + if (dream.description.length > 60) "..." else "",
-                        style = MaterialTheme.typography.bodySmall,
-                        textAlign = TextAlign.Start
+                    Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Reinterpret", style = MaterialTheme.typography.labelSmall)
+                }
+                
+                IconButton(
+                    onClick = { onDreamDeleted(dream) }
+                ) {
+                    Icon(
+                        Icons.Default.Delete,
+                        contentDescription = "Delete dream",
+                        tint = MaterialTheme.colorScheme.error
                     )
                 }
-                Spacer(modifier = Modifier.height(4.dp))
             }
         }
     }
@@ -360,5 +522,6 @@ private fun RecentDreamsSection(
 data class DreamEntry(
     val description: String,
     val interpretation: String,
-    val timestamp: Long
+    val timestamp: Long,
+    val summary: String = "" // Brief one-sentence summary for diary view
 )

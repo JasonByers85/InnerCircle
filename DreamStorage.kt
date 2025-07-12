@@ -56,6 +56,17 @@ class DreamStorage private constructor(context: Context) {
         return getAllDreamEntries().takeLast(count)
     }
 
+    fun deleteDreamEntry(entryToDelete: DreamEntry) {
+        val currentEntries = getAllDreamEntries().toMutableList()
+        currentEntries.removeAll { entry ->
+            entry.timestamp == entryToDelete.timestamp && 
+            entry.description == entryToDelete.description
+        }
+        
+        val json = gson.toJson(currentEntries)
+        prefs.edit().putString(KEY_DREAM_ENTRIES, json).apply()
+    }
+
     fun clearAllDreamEntries() {
         prefs.edit().remove(KEY_DREAM_ENTRIES).apply()
     }

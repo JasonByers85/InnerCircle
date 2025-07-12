@@ -706,6 +706,12 @@ class UnifiedMeditationSessionViewModel(
         
         // Start audio
         val settings = _audioSettings.value
+        
+        // Apply volumes from saved settings
+        audioManager.setVolume(meditationSettings.getVolume())
+        audioManager.setBinauralVolume(meditationSettings.getBinauralVolume())
+        audioManager.setTtsVolume(meditationSettings.getTtsVolume())
+        
         if (settings.soundEnabled) {
             audioManager.playBackgroundSound(settings.backgroundSound)
         }
@@ -750,6 +756,12 @@ class UnifiedMeditationSessionViewModel(
         
         // Resume audio
         val settings = _audioSettings.value
+        
+        // Re-apply volumes in case they changed
+        audioManager.setVolume(meditationSettings.getVolume())
+        audioManager.setBinauralVolume(meditationSettings.getBinauralVolume())
+        audioManager.setTtsVolume(meditationSettings.getTtsVolume())
+        
         if (settings.soundEnabled) {
             audioManager.playBackgroundSound(settings.backgroundSound)
         }
@@ -1496,6 +1508,18 @@ class UnifiedMeditationSessionViewModel(
                 
                 // Update current sentence for UI display
                 _currentSentence.value = sentence
+                
+                // Apply current TTS settings before speaking
+                tts.setPitch(meditationSettings.getTtsPitch())
+                tts.setSpeechRate(meditationSettings.getTtsSpeed())
+                
+                // Apply saved voice if available
+                val savedVoice = meditationSettings.getTtsVoice()
+                if (savedVoice.isNotEmpty()) {
+                    tts.voices?.find { it.name == savedVoice }?.let { voice ->
+                        tts.voice = voice
+                    }
+                }
                 
                 val params = Bundle().apply {
                     putFloat(TextToSpeech.Engine.KEY_PARAM_VOLUME, meditationSettings.getTtsVolume())

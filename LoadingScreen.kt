@@ -16,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.shape.RoundedCornerShape
+import android.content.Intent
 import kotlinx.coroutines.*
 import java.io.File
 
@@ -264,6 +265,10 @@ fun ErrorMessage(
     errorMessage: String,
     onGoBack: () -> Unit
 ) {
+    val context = LocalContext.current
+    val isAuthError = errorMessage.contains("HuggingFace authentication required", ignoreCase = true) ||
+                     errorMessage.contains("auth token", ignoreCase = true)
+    
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
@@ -271,26 +276,67 @@ fun ErrorMessage(
             .fillMaxSize()
             .padding(32.dp)
     ) {
+        // AuriZen Logo
+        Image(
+            painter = painterResource(id = R.raw.aurizen_logo),
+            contentDescription = "AuriZen Logo",
+            modifier = Modifier
+                .height(90.dp)
+                .padding(bottom = 16.dp)
+                .clip(RoundedCornerShape(12.dp))
+        )
+        
         Text(
-            text = "Oops! Something went wrong",
+            text = if (isAuthError) "Authentication Required" else "Oops! Something went wrong",
             style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(bottom = 16.dp)
         )
-        Text(
-            text = errorMessage,
-            color = MaterialTheme.colorScheme.error,
-            textAlign = TextAlign.Center,
-            style = MaterialTheme.typography.bodyMedium,
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
-        Text(
-            text = "Check the logs for more details, or try again.",
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-        Button(onClick = onGoBack) {
-            Text("Try Again")
+        
+        if (isAuthError) {
+            Text(
+                text = "AuriZen needs access to download the AI model from Hugging Face.",
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Text(
+                text = "This is a one-time setup to enable your AI wellness companion.",
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodySmall,
+                color = Color.Gray,
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+            
+            Button(
+                onClick = {
+                    val intent = Intent(context, LoginActivity::class.java)
+                    context.startActivity(intent)
+                },
+                modifier = Modifier.padding(bottom = 8.dp)
+            ) {
+                Text("Login to Hugging Face")
+            }
+            
+            OutlinedButton(onClick = onGoBack) {
+                Text("Cancel")
+            }
+        } else {
+            Text(
+                text = errorMessage,
+                color = MaterialTheme.colorScheme.error,
+                textAlign = TextAlign.Center,
+                style = MaterialTheme.typography.bodyMedium,
+                modifier = Modifier.padding(bottom = 24.dp)
+            )
+            Text(
+                text = "Check the logs for more details, or try again.",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            Button(onClick = onGoBack) {
+                Text("Try Again")
+            }
         }
     }
 }

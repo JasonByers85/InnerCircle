@@ -368,7 +368,6 @@ fun MeditationScreen(
             onTtsVolumeChange = { /* No-op for this screen */ },
             onTtsSpeedChange = { /* No-op for this screen */ },
             onTtsPitchChange = { /* No-op for this screen */ },
-            onTtsVoiceChange = { /* No-op for this screen */ },
             onDismiss = { showSettings = false }
         )
     }

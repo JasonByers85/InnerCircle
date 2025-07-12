@@ -38,8 +38,9 @@ class LicenseAcknowledgmentActivity : AppCompatActivity() {
     }
 
     continueButton.setOnClickListener {
+      // Go to loading screen to download the model after license acknowledgment
       val intent = Intent(this, MainActivity::class.java).apply {
-        putExtra("NAVIGATE_TO", "home")
+        putExtra("NAVIGATE_TO", "load_screen")
       }
       startActivity(intent)
       finish()
