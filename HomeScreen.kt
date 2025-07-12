@@ -34,7 +34,6 @@ internal fun HomeRoute(
     onNavigateToBreathing: () -> Unit,
     onNavigateToMoodTracker: () -> Unit,
     onNavigateToDreamInterpreter: () -> Unit,
-    onNavigateToSettings: () -> Unit
 ) {
     val context = LocalContext.current
     val userProfile = remember { UserProfile.getInstance(context) }

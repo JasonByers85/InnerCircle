@@ -24,7 +24,6 @@ const val MEDITATION_SESSION_SCREEN = "meditation_session_screen"
 const val BREATHING_SCREEN = "breathing_screen"
 const val MOOD_TRACKER_SCREEN = "mood_tracker_screen"
 const val DREAM_INTERPRETER_SCREEN = "dream_interpreter_screen"
-const val SETTINGS_SCREEN = "settings_screen"
 const val TTS_SETTINGS_SCREEN = "tts_settings_screen"
 
 class MainActivity : ComponentActivity() {
@@ -88,10 +87,8 @@ class MainActivity : ComponentActivity() {
                                     },
                                     onNavigateToDreamInterpreter = {
                                         navController.navigate(DREAM_INTERPRETER_SCREEN)
-                                    },
-                                    onNavigateToSettings = {
-                                        navController.navigate(SETTINGS_SCREEN)
                                     }
+
                                 )
                             }
 
@@ -146,12 +143,6 @@ class MainActivity : ComponentActivity() {
 
                             composable(DREAM_INTERPRETER_SCREEN) {
                                 DreamInterpreterRoute(
-                                    onBack = { navController.popBackStack() }
-                                )
-                            }
-
-                            composable(SETTINGS_SCREEN) {
-                                SettingsRoute(
                                     onBack = { navController.popBackStack() }
                                 )
                             }
